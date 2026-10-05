@@ -1,0 +1,148 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Hollowsong</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Italiana&family=Spectral:ital,wght@0,400;0,500;1,400&family=Spline+Sans+Mono:wght@400;500&display=swap">
+<style>
+  /* Layout: full-bleed canvas cave; DOM sheets hug the left edge over a dark scrim so the cave stays visible on the right. */
+  :root {
+    color-scheme: dark;
+    --void: #06050c;
+    --ink: #ece6f7;
+    --mist: #b3abd0;
+    --amber: #ffc75e;
+    --hush: #ff7088;
+    --scrim: rgba(6, 5, 12, 0.93);
+    --tile: rgba(12, 9, 24, 0.7);
+    --display: "Italiana", "Cormorant Garamond", Georgia, serif;
+    --body: "Spectral", Georgia, "Times New Roman", serif;
+    --mono: "Spline Sans Mono", ui-monospace, Consolas, monospace;
+  }
+  [hidden] { display: none !important; }
+  html, body { height: 100%; margin: 0; background: var(--void); color: var(--ink); overflow: hidden; }
+  canvas#game { position: fixed; inset: 0; display: block; touch-action: none; }
+
+  .screen {
+    position: fixed; inset: 0;
+    display: flex; align-items: center;
+    padding-inline: clamp(16px, 6vw, 96px);
+    padding-block: 24px;
+    overflow-y: auto;
+    background: linear-gradient(90deg, var(--scrim) 0%, rgba(6, 5, 12, 0.78) 48%, rgba(6, 5, 12, 0) 88%);
+  }
+  .sheet { max-width: 35rem; min-width: 0; display: flex; flex-direction: column; gap: 1.05rem; margin-block: auto; }
+  .eyebrow { margin: 0; font-family: var(--mono); font-size: 0.72rem; letter-spacing: 0.26em; text-transform: uppercase; color: var(--amber); }
+  h1, h2 { margin: 0; font-family: var(--display); font-weight: 400; line-height: 0.9; text-wrap: balance; }
+  h1 { font-size: clamp(3.4rem, 10vw, 6.8rem); letter-spacing: 0.03em; }
+  h2 { font-size: clamp(3rem, 9vw, 5.6rem); font-variant-numeric: tabular-nums; }
+  #overHeight { font-family: var(--body); font-weight: 400; letter-spacing: -0.02em; }
+  h2 small { font-size: 0.4em; letter-spacing: 0.08em; color: var(--mist); }
+  .lede { margin: 0; font-family: var(--body); font-size: 1.12rem; line-height: 1.55; color: var(--mist); max-width: 33rem; }
+  .lede em { color: var(--ink); }
+
+  .keys { list-style: none; display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0.2rem 0; padding: 0; }
+  .keys li {
+    display: grid; justify-items: center; gap: 0.2rem;
+    width: 3.7rem; padding: 0.55rem 0.2rem 0.45rem;
+    border: 1px solid color-mix(in srgb, var(--c) 55%, transparent);
+    border-radius: 5px; background: var(--tile);
+  }
+  .keys svg { width: 1.7rem; height: 1.7rem; overflow: visible; }
+  .keys kbd { font-family: var(--mono); font-size: 0.82rem; color: var(--ink); }
+  .keys span { font-family: var(--mono); font-size: 0.58rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--c); }
+
+  .rules { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 0.5rem 1.1rem; margin: 0; font-family: var(--body); font-size: 0.98rem; line-height: 1.45; }
+  .rules dt { font-family: var(--mono); font-size: 0.66rem; letter-spacing: 0.2em; text-transform: uppercase; color: var(--amber); padding-top: 0.28rem; }
+  .rules dd { margin: 0; color: var(--ink); }
+
+  .actions { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: center; }
+  button.cta {
+    font-family: var(--mono); font-size: 0.82rem; letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--void); background: var(--amber);
+    border: 1px solid var(--amber); border-radius: 4px;
+    padding: 0.7rem 1.1rem; cursor: pointer;
+  }
+  button.cta.ghost { color: var(--ink); background: transparent; border-color: color-mix(in srgb, var(--ink) 35%, transparent); }
+  button.cta kbd { font-family: inherit; opacity: 0.65; margin-left: 0.45rem; }
+  button.cta:hover { filter: brightness(1.1); }
+  button.cta:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
+  .fine { margin: 0; font-family: var(--mono); font-size: 0.7rem; letter-spacing: 0.08em; color: var(--mist); line-height: 1.7; }
+
+  .stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.75rem; margin: 0; }
+  .stats div { display: flex; flex-direction: column; gap: 0.2rem; }
+  .stats dt { font-family: var(--mono); font-size: 0.62rem; letter-spacing: 0.18em; text-transform: uppercase; color: var(--mist); }
+  .stats dd { margin: 0; font-family: var(--body); font-size: 1.9rem; font-variant-numeric: tabular-nums; }
+  .cause { margin: 0; font-family: var(--body); font-style: italic; font-size: 1.1rem; color: var(--hush); }
+  figure.roll { margin: 0; display: flex; flex-direction: column; gap: 0.4rem; }
+  figure.roll canvas { width: 100%; height: 112px; display: block; border-radius: 4px; background: var(--tile); border: 1px solid rgba(236, 230, 247, 0.12); }
+  figure.roll figcaption { font-family: var(--mono); font-size: 0.66rem; letter-spacing: 0.16em; text-transform: uppercase; color: var(--mist); }
+
+  @media (max-width: 560px) {
+    .screen { background: var(--scrim); }
+    .stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+</style>
+</head>
+<body>
+<canvas id="game" aria-label="Hollowsong play field"></canvas>
+
+<section id="title" class="screen" aria-labelledby="titleHeading">
+  <div class="sheet">
+    <p class="eyebrow">A game of singing upward</p>
+    <h1 id="titleHeading">Hollowsong</h1>
+    <p class="lede">You are a seed of blown glass at the bottom of Hollowdeep, a cave whose crystals still remember their notes. <em>The Hush</em> is rising from below, and whatever it reaches goes quiet for good. Sing, and climb.</p>
+    <ul class="keys" id="keyChips"></ul>
+    <dl class="rules">
+      <dt>Sing</dt><dd>Hold a key to sing its note. The nearest crystal of that colour within reach pulls you toward it.</dd>
+      <dt>Chords</dt><dd>Hold two or three notes and you are pulled several ways at once. Chords are how you steer.</dd>
+      <dt>Breath</dt><dd>Singing spends breath. Going quiet refills it, but you start to fall.</dd>
+      <dt>Wear</dt><dd>A crystal cracks while you lean on it, and soon shatters. Keep moving.</dd>
+      <dt>Danger</dt><dd>Red shards crack your glass; three cracks and you break. Pale moths follow any song and drink your breath. Go quiet to lose them.</dd>
+      <dt>Echoes</dt><dd>Gold echoes refill your breath and push the Hush back down.</dd>
+    </dl>
+    <div class="actions">
+      <button class="cta" id="btnBegin" type="button">Begin <kbd>Space</kbd></button>
+    </div>
+    <p class="fine">Keys A S D F G or 1–5 · Gamepad A B X Y RB · Mouse or touch: the five tiles at the bottom<br>P pause · M mute · Best climb: <span id="bestTitle">none yet</span></p>
+  </div>
+</section>
+
+<section id="pause" class="screen" aria-labelledby="pauseHeading" hidden>
+  <div class="sheet">
+    <p class="eyebrow">Held breath</p>
+    <h2 id="pauseHeading">Paused</h2>
+    <div class="actions">
+      <button class="cta" id="btnResume" type="button">Resume <kbd>P</kbd></button>
+    </div>
+  </div>
+</section>
+
+<section id="over" class="screen" aria-labelledby="overHeading" hidden>
+  <div class="sheet">
+    <p class="eyebrow" id="overStratum">The Root Choir</p>
+    <h2 id="overHeading"><span id="overHeight">0</span> <small>metres</small></h2>
+    <p class="cause" id="overCause">The Hush reached you.</p>
+    <dl class="stats">
+      <div><dt>Echoes</dt><dd id="statEchoes">0</dd></div>
+      <div><dt>Notes</dt><dd id="statNotes">0</dd></div>
+      <div><dt>Chords</dt><dd id="statChords">0</dd></div>
+      <div><dt>Best</dt><dd id="statBest">0</dd></div>
+    </dl>
+    <figure class="roll">
+      <canvas id="roll"></canvas>
+      <figcaption>Your climb, written as a song</figcaption>
+    </figure>
+    <div class="actions">
+      <button class="cta ghost" id="btnListen" type="button">Hear your song <kbd>L</kbd></button>
+      <button class="cta" id="btnAgain" type="button">Sing again <kbd>Space</kbd></button>
+    </div>
+  </div>
+</section>
+
+<script src="game.js"></script>
+</body>
+</html>
