@@ -1348,8 +1348,47 @@ function toggleSong() {
     if (now > t0 + rollData.total + 1.2) stopSong();
   }, 100);
   playback = pb;
+  track('listen');
   $('btnListen').firstChild.textContent = 'Stop the song ';
 }
+
+// ---------------------------------------------------------------- play stats
+// Anonymous run reports to GoatCounter (no cookies, nothing personal). Each event
+// is a path that packs the facts about one run, e.g.
+//   run/hush/s2/100-149m/left/keyboard/1-2min
+// Nothing is sent from local files, localhost, or #debug sessions.
+const STATS_ON = /^https?:$/.test(location.protocol) && location.hash !== '#debug' &&
+  !/^(localhost|127\.|0\.0\.0\.0|\[::1\])/.test(location.hostname);
+let runNo = 0, runReported = true;
+const inputsUsed = new Set();
+
+function track(path) {
+  if (!STATS_ON) return;
+  const send = () => { try { window.goatcounter.count({ path, title: path, event: true }); } catch (e) { /* stats are best-effort */ } };
+  if (window.goatcounter && window.goatcounter.count) { send(); return; }
+  let tries = 0; // count.js loads async; wait for it briefly
+  const t = setInterval(() => {
+    if (window.goatcounter && window.goatcounter.count) { clearInterval(t); send(); }
+    else if (++tries > 20) clearInterval(t);
+  }, 500);
+}
+function bucket(v, edges, unit) {
+  for (let k = edges.length - 1; k >= 0; k--) {
+    if (v >= edges[k]) return k === edges.length - 1 ? `${edges[k]}+${unit}` : `${edges[k]}-${edges[k + 1] - 1}${unit}`;
+  }
+  return `0${unit}`;
+}
+function noteInput(kind) { if (state === 'play') inputsUsed.add(kind); }
+function reportRun(cause) {
+  if (runReported) return;
+  runReported = true;
+  const height = bucket(Math.floor(maxM), [0, 10, 30, 60, 100, 150, 220, 300, 400, 520, 700, 900, 1400], 'm');
+  const secs = playTime;
+  const dur = secs < 15 ? 'under-15s' : secs < 30 ? '15-30s' : secs < 60 ? '30-60s' : secs < 120 ? '1-2min' : secs < 300 ? '2-5min' : '5min+';
+  const input = inputsUsed.size === 0 ? 'none' : inputsUsed.size > 1 ? 'mixed' : [...inputsUsed][0];
+  track(`run/${cause}/s${stratumIdx + 1}/${height}/${layoutId}/${input}/${dur}`);
+}
+window.addEventListener('pagehide', () => { if (state === 'play' || state === 'paused' || state === 'dying') reportRun(state === 'dying' ? deathCause : 'quit'); });
 
 // ------------------------------------------------------------- flow control
 function begin() {
@@ -1361,6 +1400,10 @@ function begin() {
   AudioE.init();
   titleEl.hidden = true;
   state = 'play';
+  runNo++;
+  runReported = false;
+  inputsUsed.clear();
+  track(runNo === 1 ? 'start/first' : 'start/again');
   hushTimer = 0;
   bannerT = 4.5;
   AudioE.setDrone(STRATA[0].root, 0.12);
@@ -1387,6 +1430,7 @@ function resume() {
   AudioE.init();
 }
 function showOver() {
+  reportRun(deathCause);
   state = 'over'; overT = 0;
   AudioE.setHush(0);
   $('overHeight').textContent = Math.floor(maxM);
@@ -1423,6 +1467,7 @@ window.addEventListener('keydown', e => {
   if (e.code in KEYMAP) {
     e.preventDefault();
     keyHeld[KEYMAP[e.code]] = true;
+    noteInput('keyboard');
     if (state === 'title') begin();
     return;
   }
@@ -1469,6 +1514,7 @@ cv.addEventListener('pointerdown', e => {
   e.preventDefault();
   try { cv.setPointerCapture(e.pointerId); } catch (err) { /* capture unsupported */ }
   ptrNotes.set(e.pointerId, i);
+  noteInput(e.pointerType === 'touch' ? 'touch' : 'mouse');
 });
 cv.addEventListener('pointermove', e => {
   if (!ptrNotes.has(e.pointerId)) return;
@@ -1546,6 +1592,7 @@ for (const b of document.querySelectorAll('#layoutPicker [data-layout]')) {
   b.addEventListener('click', () => {
     binding = -1;
     const id = b.dataset.layout;
+    track(`layout/${id}`);
     if (id === 'custom' && !LAYOUTS.custom.keys) { layoutId = 'custom'; startBinding(); return; }
     applyLayout(id);
   });
@@ -1575,6 +1622,7 @@ function pollPad() {
   if (!gp) return;
   const down = b => !!(gp.buttons[b] && gp.buttons[b].pressed);
   PAD_NOTES.forEach((b, i) => { padHeld[i] = down(b); });
+  if (PAD_NOTES.some(down) || down(4)) noteInput('gamepad');
   if (down(4)) padHeld[4] = true; // LB doubles for the fifth note
   const now = { start: down(9), a: down(0), y: down(3), any: padHeld.some(Boolean) };
   if (now.start && !padPrev.start) {

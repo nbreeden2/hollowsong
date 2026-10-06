@@ -53,6 +53,17 @@ The number keys `1`–`5` play the five notes in every layout. The tiles, crysta
 
 Each stratum changes the cave's colours, the key of every note you sing, and the drone underneath. Your best height is saved in the browser's local storage.
 
+## Play stats
+
+The live game reports anonymous events to GoatCounter (https://hollowsong.goatcounter.com). It uses no cookies and collects nothing personal. Nothing is sent when the game runs from a local file, localhost, or with `#debug` in the URL.
+
+| Event path | When |
+| --- | --- |
+| `start/first`, `start/again` | A run begins (first run of the visit, or a retry) |
+| `run/<cause>/s<stratum>/<height>/<layout>/<input>/<duration>` | A run ends. Cause is `hush`, `shatter` or `quit` (tab closed mid-run). Height and duration are ranges, for example `100-149m` and `1-2min`. Input is `keyboard`, `gamepad`, `mouse`, `touch`, `mixed` or `none`. |
+| `listen` | Someone plays back their song |
+| `layout/<id>` | Someone picks a keyboard layout on the title screen |
+
 ## Files
 
 - `index.html`: page, overlays (title, pause, end screen) and styles

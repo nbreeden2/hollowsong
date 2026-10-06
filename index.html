@@ -135,7 +135,7 @@
     <div class="actions">
       <button class="cta" id="btnBegin" type="button">Begin <kbd>Enter</kbd></button>
     </div>
-    <p class="fine">Number keys 1–5 work in every layout · Gamepad A B X Y RB · Mouse or touch: the five tiles at the bottom<br>Enter start · P pause · M mute · Best climb: <span id="bestTitle">none yet</span></p>
+    <p class="fine">Number keys 1–5 work in every layout · Gamepad A B X Y RB · Mouse or touch: the five tiles at the bottom<br>Enter start · P pause · M mute · Best climb: <span id="bestTitle">none yet</span><br>Anonymous play stats (height reached, run length, layout) are counted with GoatCounter. No cookies, nothing personal.</p>
   </div>
 </section>
 
@@ -173,5 +173,10 @@
 </section>
 
 <script src="game.js"></script>
+<script>
+  // GoatCounter: skip the automatic page view for local files and #debug test runs.
+  if (!/^https?:$/.test(location.protocol) || location.hash === '#debug') window.goatcounter = { no_onload: true };
+</script>
+<script data-goatcounter="https://hollowsong.goatcounter.com/count" async src="https://gc.zgo.at/count.js"></script>
 </body>
 </html>
