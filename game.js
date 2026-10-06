@@ -387,7 +387,7 @@ let rand, nL1, nL2, nR1, nR2;
 let P, crystals, shards, echoes, moths, particles, texts;
 let camY, silenceY, hushTimer, nextBandY, lastNote, maxM, echoCount, notesSung, chordsSung;
 let playTime, song, deathCause, shake, stratumIdx, bannerT, dieT, overT, cleanupT, prevSingCount;
-let hushStarted, exposure, coachTarget;
+let hushStarted, exposure, coachTarget, spine;
 let time = 0;
 const keyHeld = [false, false, false, false, false];
 const padHeld = [false, false, false, false, false];
@@ -417,6 +417,7 @@ function reset() {
   camY = P.y - H * 0.6;
   silenceY = FLOOR_Y + 600;
   hushTimer = 0; nextBandY = 40; lastNote = Math.floor(rand() * 5);
+  spine = { x: W / 2, y: FLOOR_Y - 12, note: -1, nextY: FLOOR_Y - 12 - 120 };
   maxM = 0; echoCount = 0; notesSung = 0; chordsSung = 0; prevSingCount = 0;
   hushStarted = false; exposure = 0; coachTarget = null;
   playTime = 0; song = []; shake = 0; stratumIdx = 0; bannerT = 0; dieT = 0; overT = 0; cleanupT = 0;
@@ -454,7 +455,21 @@ function genBand(yb) {
   const bandH = S.band;
   const early = yb > -320;
   const n = m < 150 || rand() < S.pair ? 2 : 1;
-  for (let k = 0; k < n; k++) {
+  // The spine: a chain of crystals, each within reach of the one below it (even
+  // hanging beneath it) and never sharing its note, so there is always a way up.
+  let placed = 0;
+  while (spine.nextY > yb - bandH) {
+    const y = spine.nextY;
+    const [L, R] = walls(y);
+    const x = clamp(spine.x + (rand() - 0.5) * 340, L + 55, R - 55);
+    let note;
+    do { note = Math.floor(rand() * 5); } while (note === spine.note || note === lastNote);
+    lastNote = note;
+    crystals.push(Object.assign(makeCrystal(x, y, note), { spine: true }));
+    spine = { x, y, note, nextY: y - (110 + rand() * 80) };
+    placed++;
+  }
+  for (let k = placed; k < n; k++) {
     for (let tries = 0; tries < 10; tries++) {
       let [x, y] = spotIn(yb, bandH, 55);
       if (early) x = W / 2 + (rand() - 0.5) * 340;
@@ -523,15 +538,20 @@ const NONE = [false, false, false, false, false];
 function silenceVoices() { syncVoices(NONE); }
 
 // ------------------------------------------------------------------- update
+// Each note reaches for one crystal of its colour: the nearest one above you, or
+// the nearest one below if none above is in reach. Preferring crystals above stops
+// a nearby crystal underneath from hiding a higher one of the same note.
 function findInRange() {
-  const best = [RANGE, RANGE, RANGE, RANGE, RANGE];
+  const best = [Infinity, Infinity, Infinity, Infinity, Infinity];
   for (let i = 0; i < 5; i++) inRange[i] = null;
   for (const c of crystals) {
     if (!c.alive) continue;
     const dy = c.y - P.y;
     if (dy > RANGE || dy < -RANGE) continue;
     const d = Math.hypot(c.x - P.x, dy);
-    if (d < best[c.note]) { best[c.note] = d; inRange[c.note] = c; }
+    if (d >= RANGE) continue;
+    const score = d + (dy > 20 ? RANGE : 0);
+    if (score < best[c.note]) { best[c.note] = score; inRange[c.note] = c; }
   }
 }
 
@@ -1668,6 +1688,8 @@ function frame(now) {
 if (location.hash === '#debug') {
   window.__hollowsong = () => ({ state, P, crystals, inRange: inRange.slice(), silenceY, maxM, deathCause, playTime, held: held.slice(), layoutId });
   window.__hollowsongStep = () => frame(performance.now());
+  // Generates a fresh cave up to `top` (world y) and returns its crystals, for layout analysis.
+  window.__hollowsongWorld = top => { reset(); genUpTo(top); return crystals.map(c => ({ x: c.x, y: c.y, note: c.note, spine: !!c.spine })); };
 }
 
 reset();
