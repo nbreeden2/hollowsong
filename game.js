@@ -19,6 +19,8 @@ const RANGE = 340;          // how far a note can reach a crystal
 const GRAV = 540;
 const MAX_SPEED = 780;
 const HUSH_LEAD = 520;      // the Hush never lags further than this below you
+const EASE_M = 250;         // the climb starts gentle and reaches full difficulty here
+const COACH_M = 60;         // live hints for new players stop at this height
 const BREATH_COST = 11;     // per note, per second
 const BREATH_REGEN = 28;
 const CRYSTAL_WEAR = 0.19;  // charge lost per second while tethered
@@ -352,6 +354,7 @@ let rand, nL1, nL2, nR1, nR2;
 let P, crystals, shards, echoes, moths, particles, texts;
 let camY, silenceY, hushTimer, nextBandY, lastNote, maxM, echoCount, notesSung, chordsSung;
 let playTime, song, deathCause, shake, stratumIdx, bannerT, dieT, overT, cleanupT, prevSingCount;
+let hushStarted, exposure, coachTarget;
 let time = 0;
 const keyHeld = [false, false, false, false, false];
 const padHeld = [false, false, false, false, false];
@@ -382,6 +385,7 @@ function reset() {
   silenceY = FLOOR_Y + 600;
   hushTimer = 0; nextBandY = 40; lastNote = Math.floor(rand() * 5);
   maxM = 0; echoCount = 0; notesSung = 0; chordsSung = 0; prevSingCount = 0;
+  hushStarted = false; exposure = 0; coachTarget = null;
   playTime = 0; song = []; shake = 0; stratumIdx = 0; bannerT = 0; dieT = 0; overT = 0; cleanupT = 0;
   for (let i = 0; i < 5; i++) { tethers[i] = null; inRange[i] = null; }
   genUpTo(camY - 600);
@@ -416,7 +420,7 @@ function genBand(yb) {
   const S = STRATA[stratumAt(m)];
   const bandH = S.band;
   const early = yb > -320;
-  const n = early || rand() < S.pair ? 2 : 1;
+  const n = m < 150 || rand() < S.pair ? 2 : 1;
   for (let k = 0; k < n; k++) {
     for (let tries = 0; tries < 10; tries++) {
       let [x, y] = spotIn(yb, bandH, 55);
@@ -498,6 +502,16 @@ function findInRange() {
   }
 }
 
+// The crystal a new player should aim for: the highest one in reach above them.
+function pickCoach() {
+  let best = null;
+  for (let i = 0; i < 5; i++) {
+    const c = inRange[i];
+    if (c && c.y < P.y - 40 && c.charge > 0.2 && (!best || c.y < best.y)) best = c;
+  }
+  return best;
+}
+
 function shatterCrystal(c, quiet) {
   c.alive = false; c.charge = 0;
   for (let i = 0; i < 5; i++) if (tethers[i] === c) tethers[i] = null;
@@ -510,13 +524,15 @@ function shatterCrystal(c, quiet) {
 function update(dt) {
   playTime += dt;
   const S = STRATA[stratumIdx];
+  // 1 at the cave floor, 0 once you've climbed EASE_M metres
+  const ease = clamp(1 - maxM / EASE_M, 0, 1);
 
   // breath
   const sing = [false, false, false, false, false];
   let nSing = 0;
   for (let i = 0; i < 5; i++) { held[i] = keyHeld[i] || padHeld[i] || [...ptrNotes.values()].includes(i); sing[i] = held[i] && !P.winded; if (sing[i]) nSing++; }
   if (nSing > 0) {
-    P.breath -= BREATH_COST * nSing * dt;
+    P.breath -= BREATH_COST * lerp(1, 0.6, ease) * nSing * dt;
     if (P.breath <= 0) {
       P.breath = 0; P.winded = true; nSing = 0;
       for (let i = 0; i < 5; i++) sing[i] = false;
@@ -544,9 +560,10 @@ function update(dt) {
       tethers[i] = c;
     }
   }
+  coachTarget = maxM < COACH_M ? pickCoach() : null;
 
   // forces
-  let ax = 0, ay = GRAV, nT = 0;
+  let ax = 0, ay = GRAV * lerp(1, 0.82, ease), nT = 0;
   const pull = P.muffled > 0 ? 0.5 : 1;
   for (let i = 0; i < 5; i++) {
     const c = tethers[i];
@@ -554,12 +571,13 @@ function update(dt) {
     const dx = c.x - P.x, dy = c.y - P.y, d = Math.hypot(dx, dy) || 1;
     const F = Math.min(1900, 11 * Math.max(0, d - 30)) * pull;
     ax += dx / d * F; ay += dy / d * F; nT++;
-    c.charge -= CRYSTAL_WEAR * dt;
+    c.charge -= CRYSTAL_WEAR * lerp(1, 0.45, ease) * dt;
     if (c.charge <= 0) shatterCrystal(c);
   }
   if (nT >= 2 && Math.random() < dt * 20) emit(P.x, P.y, 1, { c: P.glow, speed: 40, life: 0.8, size: 2 });
   P.vx += ax * dt; P.vy += ay * dt;
-  const damp = Math.exp(-(nT ? 1.3 : 0.22) * dt);
+  // early on, swings settle faster and falls are slower, so there's time to react
+  const damp = Math.exp(-(nT ? lerp(1.3, 2.4, ease) : lerp(0.22, 0.9, ease)) * dt);
   P.vx *= damp; P.vy *= damp;
   const sp = Math.hypot(P.vx, P.vy);
   if (sp > MAX_SPEED) { P.vx *= MAX_SPEED / sp; P.vy *= MAX_SPEED / sp; }
@@ -640,13 +658,24 @@ function update(dt) {
   }
 
   // the Hush
+  // It waits until you've started climbing (or 20 s pass), rises slowly at first,
+  // and you can survive a brief dip into it if you sing your way back out.
   hushTimer += dt;
-  if (hushTimer > 2.5) silenceY -= S.hush * (1 + Math.min(0.5, playTime / 600)) * dt;
-  silenceY = Math.min(silenceY, P.y + HUSH_LEAD);
+  if (!hushStarted && (maxM > 8 || hushTimer > 20)) {
+    hushStarted = true;
+    say(P.x, P.y - 40, 'the Hush stirs below you', [255, 140, 160]);
+  }
+  if (hushStarted) silenceY -= S.hush * lerp(1, 0.45, ease) * (1 + Math.min(0.5, playTime / 600)) * dt;
+  silenceY = Math.min(silenceY, P.y + lerp(HUSH_LEAD, 1000, ease));
   for (const c of crystals) if (c.alive && c.y > silenceY - 6) shatterCrystal(c, true);
   const gap = silenceY - P.y;
   AudioE.setHush(clamp(1 - (gap - 30) / 420, 0, 1));
-  if (P.y + P.r * 0.3 > silenceY) { die('hush'); return; }
+  if (P.y + P.r * 0.3 > silenceY) {
+    exposure += dt;
+    if (exposure > 0.8 + ease) { die('hush'); return; }
+  } else {
+    exposure = Math.max(0, exposure - dt);
+  }
 
   // world upkeep
   genUpTo(camY + vy0 - 500);
@@ -728,6 +757,7 @@ function draw() {
   for (const c of crystals) if (c.alive && c.y > wy0 - 60 && c.y < wy1 + 60) drawCrystal(c);
   for (const sh of shards) if (sh.y > wy0 - 40 && sh.y < wy1 + 40) drawShard(sh);
   drawTethers();
+  drawCoach();
   if (state !== 'dying' && state !== 'over') drawPlayer();
   for (const m of moths) if (m.y > wy0 - 40 && m.y < wy1 + 40) drawMoth(m);
   drawParticles();
@@ -958,6 +988,39 @@ function drawTethers() {
   ctx.globalCompositeOperation = 'source-over';
 }
 
+function drawCoach() {
+  const c = coachTarget;
+  if (state !== 'play' || !c || !c.alive || tethers[c.note] === c) return;
+  const n = NOTES[c.note];
+  const pulse = 0.5 + 0.5 * Math.sin(time * 6);
+  ctx.strokeStyle = rgba(n.rgb, 0.35 + 0.3 * pulse);
+  ctx.lineWidth = 1.5;
+  ctx.setLineDash([2, 7]);
+  ctx.beginPath(); ctx.moveTo(P.x, P.y); ctx.lineTo(c.x, c.y); ctx.stroke();
+  ctx.setLineDash([]);
+  const bx = c.x + c.size * 2.6, by = c.y - c.size * 1.6, r = 13 + pulse * 2;
+  ctx.fillStyle = 'rgba(10,8,20,0.8)';
+  ctx.beginPath(); ctx.arc(bx, by, r, 0, Math.PI * 2); ctx.fill();
+  ctx.strokeStyle = rgba(n.rgb, 0.95); ctx.lineWidth = 2; ctx.stroke();
+  ctx.fillStyle = 'rgba(255,255,255,0.95)';
+  ctx.font = `bold 14px ${MONO}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(n.key, bx, by + 1);
+}
+
+// What a new player should do right now, in plain words.
+function coachMessage() {
+  if (maxM >= COACH_M || P.winded) return null;
+  let on = null;
+  for (let i = 0; i < 5; i++) if (tethers[i]) on = tethers[i];
+  if (on) {
+    if (P.vy < -60 && P.y < on.y + 30) return 'Let go now. Your momentum will carry you up.';
+    return 'Swing up toward it, then let go as you pass it.';
+  }
+  const c = coachTarget;
+  if (c) return `Hold ${NOTES[c.note].key} to rise toward the ${NOTES[c.note].name.toLowerCase()} crystal.`;
+  return 'Nothing above is in reach. Let yourself drift until a crystal lights up.';
+}
+
 function drawPlayer() {
   // inner light takes the colour of whatever you are singing
   let col = [210, 222, 255], n = 0, acc = [0, 0, 0];
@@ -1068,6 +1131,7 @@ function drawVignette() {
   if (state === 'play') {
     const prox = clamp(1 - (silenceY - P.y - 30) / 420, 0, 1);
     if (prox > 0) { ctx.fillStyle = `rgba(0,0,0,${prox * 0.35})`; ctx.fillRect(vx0, vy0, vx1 - vx0, vy1 - vy0); }
+    if (exposure > 0) { ctx.fillStyle = `rgba(60,0,16,${Math.min(0.45, exposure * 0.4)})`; ctx.fillRect(vx0, vy0, vx1 - vx0, vy1 - vy0); }
   }
 }
 
@@ -1117,8 +1181,9 @@ function drawHUD(pal) {
     if (ctx.roundRect) ctx.roundRect(x, y, TW, TH, 5); else ctx.rect(x, y, TW, TH);
     ctx.fillStyle = 'rgba(10,8,20,0.62)'; ctx.fill();
     if (pressed) { ctx.fillStyle = rgba(n.rgb, tethered ? 0.32 : 0.12); ctx.fill(); }
-    ctx.strokeStyle = rgba(n.rgb, tethered ? 1 : avail ? 0.75 : 0.22);
-    ctx.lineWidth = tethered ? 2 : 1.2; ctx.stroke();
+    const coached = coachTarget && coachTarget.note === i && !tethered;
+    ctx.strokeStyle = rgba(n.rgb, tethered || coached ? 1 : avail ? 0.75 : 0.22);
+    ctx.lineWidth = tethered ? 2 : coached ? 2 + 1.5 * (0.5 + 0.5 * Math.sin(time * 6)) : 1.2; ctx.stroke();
     ctx.save(); ctx.translate(x + TW / 2, y + 27); ctx.scale(9, 9);
     shapePath(ctx, n.shape);
     ctx.fillStyle = rgba(n.rgb, avail || pressed ? 0.95 : 0.3); ctx.fill();
@@ -1141,10 +1206,16 @@ function drawHUD(pal) {
   if (!P.winded) ctx.fillText(`THE HUSH · ${Math.max(0, gapM).toFixed(0)} M BELOW`, W / 2, TY - 14);
   setSpacing(0);
 
-  if (state === 'play' && notesSung === 0 && playTime < 14) {
-    ctx.font = `italic 20px ${DISPLAY}`;
-    ctx.fillStyle = `rgba(240,236,255,${0.55 + 0.35 * Math.sin(time * 3)})`;
-    ctx.fillText('Hold a key whose crystal is lit, and you will rise toward it.', W / 2, TY - 46);
+  const tip = state === 'play' ? coachMessage() : null;
+  if (tip) {
+    ctx.font = `italic 22px ${DISPLAY}`;
+    ctx.fillStyle = `rgba(240,236,255,${0.75 + 0.2 * Math.sin(time * 3)})`;
+    ctx.fillText(tip, W / 2, TY - 46);
+  }
+  if (exposure > 0 && state === 'play') {
+    ctx.font = `italic 30px ${DISPLAY}`;
+    ctx.fillStyle = `rgba(255,120,140,${0.7 + 0.3 * Math.sin(time * 16)})`;
+    ctx.fillText('Sing your way out of the Hush!', W / 2, H * 0.42);
   }
 
   if (bannerT > 0) {
@@ -1280,6 +1351,15 @@ function showOver() {
   $('overCause').textContent = deathCause === 'hush'
     ? 'The Hush reached you, and your song went quiet.'
     : 'Your glass gave way.';
+  const tips = [
+    'Let go of a note while you are still rising past its crystal. Your momentum keeps you climbing.',
+    'Find the next crystal before the one you are on cracks. Its key shows up beside it.',
+    'Hold two notes to hang between two crystals, then let go of the lower one.',
+    'Falling is fine. You have time to catch another crystal before the Hush reaches you.',
+    'Watch the ring around your glass. When it runs low, go quiet for a moment to refill it.',
+  ];
+  $('overTip').textContent = maxM < 150 ? `Tip: ${tips[Math.floor(Math.random() * tips.length)]}` : '';
+  $('overTip').hidden = maxM >= 150;
   $('statEchoes').textContent = echoCount;
   $('statNotes').textContent = notesSung;
   $('statChords').textContent = chordsSung;
@@ -1405,7 +1485,7 @@ function frame(now) {
 }
 
 if (location.hash === '#debug') {
-  window.__hollowsong = () => ({ state, P, crystals, inRange: inRange.slice(), silenceY, maxM });
+  window.__hollowsong = () => ({ state, P, crystals, inRange: inRange.slice(), silenceY, maxM, deathCause, playTime });
   window.__hollowsongStep = () => frame(performance.now());
 }
 

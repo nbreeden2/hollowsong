@@ -22,7 +22,8 @@ Open `index.html` in a modern browser. There is no build step and nothing to ins
 
 - **Breath.** Each held note spends breath. When you're quiet your breath refills, but you fall. If you run out, you can't sing until you've recovered about a third of your breath.
 - **Wear.** A crystal cracks while you're tethered to it, and shatters after about five seconds.
-- **The Hush.** It rises from below and silences any crystal it reaches. If it touches you, the run ends. It never falls more than 26 m behind you.
+- **The Hush.** It rises from below and silences any crystal it reaches. It waits until you've climbed a few metres (or 20 seconds pass) before it starts rising. If it swallows you, you have a moment to sing your way back out before the run ends. It never falls more than 26 m behind you, or 50 m near the start.
+- **Gentle start.** The first 250 m ease you in: the Hush is slower, falls are slower, swings settle faster, crystals last about twice as long and singing costs less breath. All of this tapers off to full difficulty by 250 m. For the first 60 m a coach marks the crystal to aim for and tells you which key to hold and when to let go.
 - **Shards** (red, jagged) crack your glass. Three cracks and you shatter.
 - **Moths** (pale, from the third stratum) chase any song within reach and drink your breath while they're touching you. Go quiet and they lose interest.
 - **Echoes** (gold) refill 30% of your breath and push the Hush back 4.5 m.
