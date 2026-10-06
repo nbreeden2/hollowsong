@@ -46,11 +46,44 @@ const NOTES = [
 ];
 NOTES.forEach(n => { n.rgb = hexRgb(n.color); });
 
-const KEYMAP = {
-  KeyA: 0, KeyS: 1, KeyD: 2, KeyF: 3, KeyG: 4,
+// Keyboard layouts. Each lists the key for notes 1→5. The two one-hand layouts
+// follow piano fingering: the left thumb plays the top note, the right thumb the
+// bottom one, so the space bar means a different note in each.
+const LAYOUTS = {
+  left:    { name: 'Left hand',  keys: ['KeyA', 'KeyS', 'KeyD', 'KeyF', 'Space'],     extra: { KeyG: 4 },  note: 'Fingers rest on A S D F, thumb on the space bar. G also plays the fifth note.' },
+  right:   { name: 'Right hand', keys: ['Space', 'KeyJ', 'KeyK', 'KeyL', 'Semicolon'], extra: { Quote: 4 }, note: "Thumb on the space bar, fingers rest on J K L ;. The ' key also plays the fifth note." },
+  classic: { name: 'Classic',    keys: ['KeyA', 'KeyS', 'KeyD', 'KeyF', 'KeyG'],      extra: {},           note: 'The original five keys, one finger each.' },
+  custom:  { name: 'Custom',     keys: null,                                           extra: {},           note: 'Your own five keys, for one hand or two.' },
+};
+// Number keys always work, whatever the layout.
+const ALWAYS_KEYS = {
   Digit1: 0, Digit2: 1, Digit3: 2, Digit4: 3, Digit5: 4,
   Numpad1: 0, Numpad2: 1, Numpad3: 2, Numpad4: 3, Numpad5: 4,
 };
+// Keys that run the game itself and can't be bound to notes.
+const RESERVED = new Set(['Escape', 'Enter', 'NumpadEnter', 'Tab', 'KeyP', 'KeyM', 'KeyR', ...Object.keys(ALWAYS_KEYS)]);
+const CODE_LABELS = {
+  Space: ['SPACE', 'Space'], Semicolon: [';', ';'], Quote: ["'", "'"], Comma: [',', ','], Period: ['.', '.'],
+  Slash: ['/', '/'], Backslash: ['\\', '\\'], BracketLeft: ['[', '['], BracketRight: [']', ']'],
+  Minus: ['-', '-'], Equal: ['=', '='], Backquote: ['`', '`'],
+  ArrowLeft: ['←', 'Left'], ArrowRight: ['→', 'Right'], ArrowUp: ['↑', 'Up'], ArrowDown: ['↓', 'Down'],
+  ShiftLeft: ['⇧L', 'Left Shift'], ShiftRight: ['⇧R', 'Right Shift'], CapsLock: ['Cap', 'Caps Lock'],
+  Backspace: ['⌫', 'Backspace'],
+};
+let KEYMAP = {};
+let layoutId = 'left';
+let layoutMap = null; // the keyboard's real legends (e.g. AZERTY), where the browser shares them
+
+function keyShort(code) {
+  if (CODE_LABELS[code]) return CODE_LABELS[code][0];
+  if (layoutMap && layoutMap.has(code)) return layoutMap.get(code).toUpperCase();
+  if (code.startsWith('Key')) return code.slice(3);
+  if (code.startsWith('Digit')) return code.slice(5);
+  if (code.startsWith('Numpad')) return 'N' + code.slice(6, 8);
+  return code.slice(0, 3);
+}
+function keyLong(code) { return CODE_LABELS[code] ? CODE_LABELS[code][1] : keyShort(code); }
+const noteKey = i => LAYOUTS[layoutId].keys[i];
 const PAD_NOTES = [0, 1, 2, 3, 5]; // A B X Y RB
 
 const SHAPES = (() => {
@@ -338,7 +371,7 @@ resize();
     const pts = SHAPES[n.shape].map(poly => `<polygon points="${poly.map(p => p.join(',')).join(' ')}" fill="${n.color}" fill-opacity="0.85" stroke="#fff" stroke-opacity="0.6" stroke-width="0.08"/>`).join('');
     const li = document.createElement('li');
     li.style.setProperty('--c', n.color);
-    li.innerHTML = `<svg viewBox="-1.7 -1.7 3.4 3.4" aria-hidden="true">${pts}</svg><kbd>${n.key}</kbd><span>${n.name}</span>`;
+    li.innerHTML = `<svg viewBox="-1.7 -1.7 3.4 3.4" aria-hidden="true">${pts}</svg><kbd></kbd><span>${n.name}</span>`;
     ul.appendChild(li);
   }
 })();
@@ -901,7 +934,7 @@ function drawCrystal(c) {
     ctx.setLineDash([]);
     ctx.fillStyle = rgba(n.rgb, 0.9);
     ctx.font = `11px ${MONO}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText(n.key, c.x, c.y + c.size * 2 + 10);
+    ctx.fillText(keyShort(noteKey(c.note)), c.x, c.y + c.size * 2 + 10);
   }
   if (tethered) {
     ctx.strokeStyle = rgba(n.rgb, 0.85);
@@ -998,13 +1031,19 @@ function drawCoach() {
   ctx.setLineDash([2, 7]);
   ctx.beginPath(); ctx.moveTo(P.x, P.y); ctx.lineTo(c.x, c.y); ctx.stroke();
   ctx.setLineDash([]);
-  const bx = c.x + c.size * 2.6, by = c.y - c.size * 1.6, r = 13 + pulse * 2;
+  // a round badge for one-letter keys, stretching to a pill for longer labels
+  const label = keyShort(noteKey(c.note));
+  ctx.font = `bold ${label.length > 1 ? 11 : 14}px ${MONO}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  const r = 13 + pulse * 2, half = Math.max(0, ctx.measureText(label).width / 2 + 7 - r);
+  const bx = c.x + c.size * 2.6 + half, by = c.y - c.size * 1.6;
   ctx.fillStyle = 'rgba(10,8,20,0.8)';
-  ctx.beginPath(); ctx.arc(bx, by, r, 0, Math.PI * 2); ctx.fill();
+  ctx.beginPath();
+  ctx.arc(bx - half, by, r, Math.PI / 2, Math.PI * 1.5);
+  ctx.arc(bx + half, by, r, -Math.PI / 2, Math.PI / 2);
+  ctx.closePath(); ctx.fill();
   ctx.strokeStyle = rgba(n.rgb, 0.95); ctx.lineWidth = 2; ctx.stroke();
   ctx.fillStyle = 'rgba(255,255,255,0.95)';
-  ctx.font = `bold 14px ${MONO}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  ctx.fillText(n.key, bx, by + 1);
+  ctx.fillText(label, bx, by + 1);
 }
 
 // What a new player should do right now, in plain words.
@@ -1017,7 +1056,7 @@ function coachMessage() {
     return 'Swing up toward it, then let go as you pass it.';
   }
   const c = coachTarget;
-  if (c) return `Hold ${NOTES[c.note].key} to rise toward the ${NOTES[c.note].name.toLowerCase()} crystal.`;
+  if (c) return `Hold ${keyLong(noteKey(c.note))} to rise toward the ${NOTES[c.note].name.toLowerCase()} crystal.`;
   return 'Nothing above is in reach. Let yourself drift until a crystal lights up.';
 }
 
@@ -1190,7 +1229,7 @@ function drawHUD(pal) {
     ctx.restore();
     ctx.font = `12px ${MONO}`; ctx.textAlign = 'center';
     ctx.fillStyle = `rgba(255,255,255,${avail ? 0.85 : 0.4})`;
-    ctx.fillText(n.key, x + TW / 2, y + TH - 9);
+    ctx.fillText(keyShort(noteKey(i)), x + TW / 2, y + TH - 9);
   }
   if (P.winded) {
     ctx.font = `italic 16px ${DISPLAY}`; ctx.textAlign = 'center';
@@ -1315,6 +1354,10 @@ function toggleSong() {
 // ------------------------------------------------------------- flow control
 function begin() {
   if (state !== 'title') return;
+  if (binding >= 0) { // e.g. a gamepad Start press mid-binding: drop the unfinished binding
+    binding = -1;
+    applyLayout(LAYOUTS.custom.keys ? 'custom' : 'left');
+  }
   AudioE.init();
   titleEl.hidden = true;
   state = 'play';
@@ -1374,6 +1417,9 @@ function showOver() {
 // ------------------------------------------------------------------- input
 window.addEventListener('keydown', e => {
   if (e.ctrlKey || e.metaKey || e.altKey) return;
+  if (binding >= 0) { e.preventDefault(); bindKey(e.code); return; }
+  // Enter on a layout button selects it rather than starting the game.
+  if ((e.code === 'Enter' || e.code === 'NumpadEnter') && e.target.closest && e.target.closest('#layoutPicker')) return;
   if (e.code in KEYMAP) {
     e.preventDefault();
     keyHeld[KEYMAP[e.code]] = true;
@@ -1381,10 +1427,15 @@ window.addEventListener('keydown', e => {
     return;
   }
   switch (e.code) {
-    case 'Space': case 'Enter': case 'NumpadEnter':
+    case 'Enter': case 'NumpadEnter':
       e.preventDefault();
       if (state === 'title') begin();
       else if (state === 'over' && overT > 0.6) restart();
+      else if (state === 'paused') resume();
+      break;
+    case 'Space': // only reaches here when Space isn't a note in this layout
+      e.preventDefault();
+      if (state === 'title') begin();
       else if (state === 'paused') resume();
       break;
     case 'KeyP': case 'Escape':
@@ -1393,7 +1444,7 @@ window.addEventListener('keydown', e => {
     case 'KeyM':
       AudioE.toggleMute();
       break;
-    case 'KeyL':
+    case 'KeyR':
       if (state === 'over') toggleSong();
       break;
   }
@@ -1428,7 +1479,89 @@ const ptrEnd = e => ptrNotes.delete(e.pointerId);
 cv.addEventListener('pointerup', ptrEnd);
 cv.addEventListener('pointercancel', ptrEnd);
 
-titleEl.addEventListener('click', () => begin());
+titleEl.addEventListener('click', e => {
+  if (binding >= 0 || e.target.closest('#layoutPicker')) return;
+  begin();
+});
+
+// ------------------------------------------------------------ layout picker
+let binding = -1, bindDraft = [], bindError = '';
+const chipKeys = [...document.querySelectorAll('#keyChips kbd')];
+const chipItems = [...document.querySelectorAll('#keyChips li')];
+
+function applyLayout(id) {
+  if (!LAYOUTS[id] || !LAYOUTS[id].keys) id = 'left';
+  layoutId = id;
+  const L = LAYOUTS[id];
+  KEYMAP = { ...ALWAYS_KEYS };
+  L.keys.forEach((code, i) => { KEYMAP[code] = i; });
+  for (const [code, i] of Object.entries(L.extra)) if (!(code in KEYMAP)) KEYMAP[code] = i;
+  keyHeld.fill(false);
+  try { localStorage.setItem('hollowsong.layout', id); } catch (e) { /* storage unavailable */ }
+  renderPicker();
+}
+function startBinding() {
+  binding = 0; bindDraft = []; bindError = '';
+  renderPicker();
+}
+function bindKey(code) {
+  if (code === 'Escape') {
+    binding = -1;
+    if (!LAYOUTS.custom.keys) { applyLayout('left'); return; }
+    renderPicker();
+    return;
+  }
+  if (RESERVED.has(code)) { bindError = `${keyLong(code)} runs the game, so it can't be a note. Try another key.`; renderPicker(); return; }
+  if (bindDraft.includes(code)) { bindError = `${keyLong(code)} is already one of your notes. Try another key.`; renderPicker(); return; }
+  bindError = '';
+  bindDraft.push(code);
+  binding++;
+  if (binding < 5) { renderPicker(); return; }
+  binding = -1;
+  LAYOUTS.custom.keys = bindDraft.slice();
+  try { localStorage.setItem('hollowsong.custom', JSON.stringify(bindDraft)); } catch (e) { /* storage unavailable */ }
+  applyLayout('custom');
+}
+function renderPicker() {
+  const L = LAYOUTS[layoutId];
+  for (const b of document.querySelectorAll('#layoutPicker [data-layout]')) {
+    b.setAttribute('aria-pressed', String(b.dataset.layout === layoutId));
+  }
+  chipKeys.forEach((k, i) => {
+    const code = binding >= 0 ? bindDraft[i] : L.keys && L.keys[i];
+    k.textContent = code ? keyShort(code) : '?';
+    chipItems[i].classList.toggle('binding', i === binding);
+  });
+  const note = $('layoutNote');
+  if (binding >= 0) {
+    note.textContent = bindError || `Press the key you want for ${NOTES[binding].name}, note ${binding + 1} of 5. Esc cancels.`;
+    note.classList.toggle('warn', !!bindError);
+  } else {
+    note.textContent = L.note;
+    note.classList.remove('warn');
+  }
+  $('btnBind').hidden = layoutId !== 'custom' || binding >= 0;
+}
+for (const b of document.querySelectorAll('#layoutPicker [data-layout]')) {
+  b.addEventListener('click', () => {
+    binding = -1;
+    const id = b.dataset.layout;
+    if (id === 'custom' && !LAYOUTS.custom.keys) { layoutId = 'custom'; startBinding(); return; }
+    applyLayout(id);
+  });
+}
+$('btnBind').addEventListener('click', () => startBinding());
+
+try {
+  const saved = JSON.parse(localStorage.getItem('hollowsong.custom') || 'null');
+  if (Array.isArray(saved) && saved.length === 5 && saved.every(c => typeof c === 'string' && !RESERVED.has(c)) && new Set(saved).size === 5) LAYOUTS.custom.keys = saved;
+} catch (e) { /* storage unavailable */ }
+let savedLayout = 'left';
+try { savedLayout = localStorage.getItem('hollowsong.layout') || 'left'; } catch (e) { /* storage unavailable */ }
+applyLayout(savedLayout);
+if (navigator.keyboard && navigator.keyboard.getLayoutMap) {
+  navigator.keyboard.getLayoutMap().then(m => { layoutMap = m; renderPicker(); }).catch(() => {});
+}
 $('btnResume').addEventListener('click', e => { e.stopPropagation(); resume(); });
 $('btnAgain').addEventListener('click', () => restart());
 $('btnListen').addEventListener('click', () => toggleSong());
@@ -1485,7 +1618,7 @@ function frame(now) {
 }
 
 if (location.hash === '#debug') {
-  window.__hollowsong = () => ({ state, P, crystals, inRange: inRange.slice(), silenceY, maxM, deathCause, playTime });
+  window.__hollowsong = () => ({ state, P, crystals, inRange: inRange.slice(), silenceY, maxM, deathCause, playTime, held: held.slice(), layoutId });
   window.__hollowsongStep = () => frame(performance.now());
 }
 

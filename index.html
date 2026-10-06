@@ -55,6 +55,21 @@
   .keys kbd { font-family: var(--mono); font-size: 0.82rem; color: var(--ink); }
   .keys span { font-family: var(--mono); font-size: 0.58rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--c); }
 
+  .layout { display: flex; flex-direction: column; gap: 0.6rem; }
+  .seg { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+  .seg button {
+    font-family: var(--mono); font-size: 0.7rem; letter-spacing: 0.12em; text-transform: uppercase;
+    color: var(--mist); background: var(--tile);
+    border: 1px solid color-mix(in srgb, var(--ink) 22%, transparent); border-radius: 4px;
+    padding: 0.45rem 0.7rem; cursor: pointer;
+  }
+  .seg button[aria-pressed="true"] { color: var(--void); background: var(--ink); border-color: var(--ink); }
+  .seg button:focus-visible { outline: 2px solid var(--amber); outline-offset: 2px; }
+  .keys li.binding { border-color: var(--amber); box-shadow: 0 0 0 2px var(--amber); }
+  .layout-row { display: flex; flex-wrap: wrap; gap: 0.6rem 1rem; align-items: center; }
+  .layout-note { margin: 0; flex: 1 1 16rem; min-width: 0; font-family: var(--body); font-style: italic; font-size: 0.95rem; color: var(--mist); }
+  .layout-note.warn { color: var(--hush); }
+  button.cta.small { padding: 0.45rem 0.8rem; font-size: 0.7rem; }
   .rules { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 0.5rem 1.1rem; margin: 0; font-family: var(--body); font-size: 0.98rem; line-height: 1.45; }
   .rules dt { font-family: var(--mono); font-size: 0.66rem; letter-spacing: 0.2em; text-transform: uppercase; color: var(--amber); padding-top: 0.28rem; }
   .rules dd { margin: 0; color: var(--ink); }
@@ -96,7 +111,19 @@
     <p class="eyebrow">A game of singing upward</p>
     <h1 id="titleHeading">Hollowsong</h1>
     <p class="lede">You are a seed of blown glass at the bottom of Hollowdeep, a cave whose crystals still remember their notes. <em>The Hush</em> is rising from below, and whatever it reaches goes quiet for good. Sing, and climb.</p>
-    <ul class="keys" id="keyChips"></ul>
+    <div class="layout" id="layoutPicker">
+      <div class="seg" role="group" aria-label="Keyboard layout">
+        <button type="button" data-layout="left" aria-pressed="true">Left hand</button>
+        <button type="button" data-layout="right" aria-pressed="false">Right hand</button>
+        <button type="button" data-layout="classic" aria-pressed="false">Classic</button>
+        <button type="button" data-layout="custom" aria-pressed="false">Custom</button>
+      </div>
+      <ul class="keys" id="keyChips"></ul>
+      <div class="layout-row">
+        <p class="layout-note" id="layoutNote" aria-live="polite">Fingers rest on A S D F, thumb on the space bar.</p>
+        <button type="button" class="cta ghost small" id="btnBind" hidden>Set my keys</button>
+      </div>
+    </div>
     <dl class="rules">
       <dt>Sing</dt><dd>Hold a key to sing its note. The nearest crystal of that colour within reach pulls you toward it.</dd>
       <dt>Chords</dt><dd>Hold two or three notes and you are pulled several ways at once. Chords are how you steer.</dd>
@@ -106,9 +133,9 @@
       <dt>Echoes</dt><dd>Gold echoes refill your breath and push the Hush back down.</dd>
     </dl>
     <div class="actions">
-      <button class="cta" id="btnBegin" type="button">Begin <kbd>Space</kbd></button>
+      <button class="cta" id="btnBegin" type="button">Begin <kbd>Enter</kbd></button>
     </div>
-    <p class="fine">Keys A S D F G or 1–5 · Gamepad A B X Y RB · Mouse or touch: the five tiles at the bottom<br>P pause · M mute · Best climb: <span id="bestTitle">none yet</span></p>
+    <p class="fine">Number keys 1–5 work in every layout · Gamepad A B X Y RB · Mouse or touch: the five tiles at the bottom<br>Enter start · P pause · M mute · Best climb: <span id="bestTitle">none yet</span></p>
   </div>
 </section>
 
@@ -139,8 +166,8 @@
       <figcaption>Your climb, written as a song</figcaption>
     </figure>
     <div class="actions">
-      <button class="cta ghost" id="btnListen" type="button">Hear your song <kbd>L</kbd></button>
-      <button class="cta" id="btnAgain" type="button">Sing again <kbd>Space</kbd></button>
+      <button class="cta ghost" id="btnListen" type="button">Hear your song <kbd>R</kbd></button>
+      <button class="cta" id="btnAgain" type="button">Sing again <kbd>Enter</kbd></button>
     </div>
   </div>
 </section>

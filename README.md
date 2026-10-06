@@ -10,13 +10,26 @@ Open `index.html` in a modern browser. There is no build step and nothing to ins
 
 ## Controls
 
+Choose a keyboard layout on the title screen. The game remembers your choice.
+
+| Layout | Ash | Amber | Moss | Tide | Iris | Notes |
+| --- | --- | --- | --- | --- | --- | --- |
+| Left hand (default) | `A` | `S` | `D` | `F` | `Space` | Piano fingering: the left thumb plays the top note. `G` also plays Iris. |
+| Right hand | `Space` | `J` | `K` | `L` | `;` | Piano fingering: the right thumb plays the bottom note. `'` also plays Iris. |
+| Classic | `A` | `S` | `D` | `F` | `G` | The original layout. |
+| Custom | your choice | | | | | Press a key for each note in turn. Good for two hands. |
+
+The number keys `1`–`5` play the five notes in every layout. The tiles, crystal labels and coach prompts always show the keys for your current layout.
+
 | Action | Keyboard | Gamepad | Mouse / touch |
 | --- | --- | --- | --- |
-| Sing Ash / Amber / Moss / Tide / Iris | `A` `S` `D` `F` `G` (or `1`–`5`) | A, B, X, Y, RB (LB also works) | Hold the five tiles at the bottom (touch: bottom 40% of the screen, split into five columns) |
-| Start / sing again | `Space` | Start | Click |
+| Sing the five notes | your layout, or `1`–`5` | A, B, X, Y, RB (LB also works) | Hold the five tiles at the bottom (touch: bottom 40% of the screen, split into five columns) |
+| Start / sing again | `Enter` (any note key also starts) | Start | Click |
 | Pause | `P` or `Esc` | Start | |
 | Mute | `M` | | |
-| Hear your song (end screen) | `L` | Y | Button |
+| Hear your song (end screen) | `R` | Y | Button |
+
+`Enter`, `Esc`, `Tab`, `P`, `M`, `R` and `1`–`5` run the game, so they can't be used in a custom layout.
 
 ## Rules
 
