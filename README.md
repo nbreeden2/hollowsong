@@ -21,6 +21,8 @@ Choose a keyboard layout on the title screen. The game remembers your choice.
 
 The number keys `1`–`5` play the five notes in every layout. The tiles, crystal labels and coach prompts always show the keys for your current layout.
 
+The note tiles along the bottom of the screen show which notes are in reach. Once you know your keys you can turn them off on the title screen (**Note tiles: on/off**) for more room. They always show if you play with a mouse or touch. Crystals in reach show their key below them either way.
+
 | Action | Keyboard | Gamepad | Mouse / touch |
 | --- | --- | --- | --- |
 | Sing the five notes | your layout, or `1`–`5` | A, B, X, Y, RB (LB also works) | Hold the five tiles at the bottom (touch: bottom 40% of the screen, split into five columns) |
@@ -65,6 +67,7 @@ The live game reports anonymous events to GoatCounter (https://hollowsong.goatco
 | `run/<cause>/s<stratum>/<height>/<layout>/<input>/<duration>` | A run ends. Cause is `hush`, `shatter` or `quit` (tab closed mid-run). Height and duration are ranges, for example `100-149m` and `1-2min`. Input is `keyboard`, `gamepad`, `mouse`, `touch`, `mixed` or `none`. |
 | `listen` | Someone plays back their song |
 | `layout/<id>` | Someone picks a keyboard layout on the title screen |
+| `tiles/on`, `tiles/off` | Someone switches the note tiles on or off on the title screen |
 
 ## Files
 

@@ -355,6 +355,9 @@ const titleEl = $('title'), pauseEl = $('pause'), overEl = $('over');
 const rollCv = $('roll');
 
 let dpr = 1, scale = 1, ox = 0, oy = 0, vx0 = 0, vx1 = W, vy0 = 0, vy1 = H;
+// The note tiles: one compact row along the bottom edge of the window.
+const TW = 64, TH = 40, TG = 10, TX0 = (W - (5 * TW + 4 * TG)) / 2;
+let TY = H - TH - 14;
 function resize() {
   dpr = Math.min(2, window.devicePixelRatio || 1);
   const cw = window.innerWidth, ch = window.innerHeight;
@@ -364,6 +367,7 @@ function resize() {
   ox = (cw - W * scale) / 2; oy = (ch - H * scale) / 2;
   vx0 = -ox / scale; vx1 = (cw - ox) / scale;
   vy0 = -oy / scale; vy1 = (ch - oy) / scale;
+  TY = vy1 - TH - 14;
 }
 window.addEventListener('resize', resize);
 resize();
@@ -391,7 +395,7 @@ let rand, nL1, nL2, nR1, nR2;
 let P, crystals, shards, echoes, moths, particles, texts;
 let camY, silenceY, hushTimer, nextBandY, lastNote, maxM, echoCount, notesSung, chordsSung;
 let playTime, song, deathCause, shake, stratumIdx, bannerT, dieT, overT, cleanupT, prevSingCount;
-let hushStarted, exposure, coachTarget, coach, spine, echoLead, callouts, explained, slowT;
+let hushStarted, exposure, coachTarget, coach, camAnchor, spine, echoLead, callouts, explained, slowT;
 let time = 0;
 const keyHeld = [false, false, false, false, false];
 const padHeld = [false, false, false, false, false];
@@ -418,7 +422,8 @@ function reset() {
   nL1 = makeNoise(rand); nL2 = makeNoise(rand); nR1 = makeNoise(rand); nR2 = makeNoise(rand);
   P = { x: W / 2, y: FLOOR_Y - 12, vx: 0, vy: 0, r: 12, breath: 100, winded: false, cracks: 0, inv: 0, muffled: 0, glow: [210, 222, 255] };
   crystals = []; shards = []; echoes = []; moths = []; particles = []; texts = [];
-  camY = P.y - H * 0.6;
+  camAnchor = CAM_CLIMB;
+  camY = P.y - camScreenY();
   silenceY = FLOOR_Y + 600;
   hushTimer = 0; nextBandY = 40; lastNote = Math.floor(rand() * 5);
   spine = { x: W / 2, y: FLOOR_Y - 12, note: -1, nextY: FLOOR_Y - 12 - 120 };
@@ -541,7 +546,7 @@ function updateCallouts(dt) {
   for (const co of callouts) co.t += dt;
   callouts = callouts.filter(co => co.t < CALLOUT_T && co.obj.alive !== false);
   if (callouts.length || bannerT > 0) return; // one at a time, and never over a stratum banner
-  const top = camY + 130, bottom = camY + H - 170;
+  const top = camY + vy0 + 130, bottom = camY + hudBase() - 90;
   const inView = o => o.y > top && o.y < bottom && o.x > vx0 + 20 && o.x < vx1 - 20;
   for (const [kind, list] of [['shard', shards], ['moth', moths], ['echo', echoes]]) {
     if (explained.has(kind) || (seenRuns[kind] || 0) >= CALLOUT_RUNS) continue;
@@ -788,8 +793,14 @@ function update(dt) {
   updateCamera(dt);
 }
 
+// Where the player sits on screen, as a fraction of the window's height: low
+// while climbing so you see what's ahead, nearer the middle while falling.
+const CAM_CLIMB = 0.7, CAM_FALL = 0.5;
+const camScreenY = () => vy0 + camAnchor * (vy1 - vy0);
 function updateCamera(dt) {
-  const target = P.y - H * 0.6;
+  camAnchor += (lerp(CAM_CLIMB, CAM_FALL, clamp(P.vy / 450, 0, 1)) - camAnchor) * Math.min(1, dt * 1.5);
+  // lead by the distance the smoothing below would otherwise lag behind
+  const target = P.y - camScreenY() + clamp(P.vy / 3.5, -160, 160);
   camY += (target - camY) * Math.min(1, dt * 3.5);
   shake = Math.max(0, shake - dt * 30);
 }
@@ -996,9 +1007,15 @@ function drawCrystal(c) {
     ctx.setLineDash([3, 5]);
     ctx.beginPath(); ctx.arc(c.x, c.y, c.size * 2, 0, Math.PI * 2); ctx.stroke();
     ctx.setLineDash([]);
-    ctx.fillStyle = rgba(n.rgb, 0.9);
-    ctx.font = `11px ${MONO}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-    ctx.fillText(keyShort(noteKey(c.note)), c.x, c.y + c.size * 2 + 10);
+    const key = keyShort(noteKey(c.note)), ky = c.y + c.size * 2 + 14;
+    ctx.font = `bold ${key.length > 2 ? 11 : 15}px ${MONO}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    const kw = Math.max(22, ctx.measureText(key).width + 12);
+    ctx.fillStyle = 'rgba(10,8,20,0.7)';
+    ctx.beginPath();
+    if (ctx.roundRect) ctx.roundRect(c.x - kw / 2, ky - 11, kw, 22, 11); else ctx.rect(c.x - kw / 2, ky - 11, kw, 22);
+    ctx.fill();
+    ctx.fillStyle = rgba(n.rgb, 0.95);
+    ctx.fillText(key, c.x, ky + 1);
   }
   if (tethered) {
     ctx.strokeStyle = rgba(n.rgb, 0.85);
@@ -1223,7 +1240,7 @@ function drawCallouts() {
     const w = Math.max(...d.lines.map(t => ctx.measureText(t).width)) + 28, h = 30 + d.lines.length * 22;
     const side = o.x < (vx0 + vx1) / 2 ? 1 : -1;
     const bx = clamp(side > 0 ? o.x + r + 18 : o.x - r - 18 - w, vx0 + 12, vx1 - 12 - w);
-    const by = clamp(oy - h / 2, camY + 130, camY + H - 170 - h);
+    const by = clamp(oy - h / 2, camY + vy0 + 130, camY + hudBase() - 70 - h);
     ctx.strokeStyle = rgba(d.c, 0.5 * a); ctx.lineWidth = 1;
     ctx.beginPath(); ctx.moveTo(o.x + side * r, oy); ctx.lineTo(side > 0 ? bx : bx + w, by + h / 2); ctx.stroke();
     ctx.beginPath();
@@ -1282,28 +1299,36 @@ function drawVignette() {
 
 function setSpacing(px) { if ('letterSpacing' in ctx) ctx.letterSpacing = px + 'px'; }
 
-const TW = 72, TH = 66, TG = 12, TX0 = (W - (5 * TW + 4 * TG)) / 2, TY = H - 86;
+// Players who know their keys can hide the tiles. They always show for mouse
+// and touch, which play by pressing them.
+let tilesOn = true;
+try { tilesOn = localStorage.getItem('hollowsong.tiles') !== 'off'; } catch (e) { /* storage unavailable */ }
+const tilesShown = () => tilesOn || inputsUsed.has('touch') || inputsUsed.has('mouse');
+const hudBase = () => tilesShown() ? TY : vy1 - 12; // top of the bottom HUD stack
+
 function drawHUD(pal) {
   const hm = Math.max(0, heightM(P.y));
   ctx.textBaseline = 'alphabetic'; ctx.textAlign = 'left';
   ctx.fillStyle = 'rgba(242,238,255,0.96)';
   ctx.font = `46px ${FIGURES}`;
   const label = String(Math.floor(hm));
-  ctx.fillText(label, 28, 70);
+  const hx = vx0 + 28, hy = vy0;
+  ctx.fillText(label, hx, hy + 70);
   const wv = ctx.measureText(label).width;
   ctx.font = `22px ${DISPLAY}`;
-  ctx.fillText('m', 34 + wv, 70);
+  ctx.fillText('m', hx + 6 + wv, hy + 70);
   ctx.font = `11px ${MONO}`; setSpacing(2.2);
   ctx.fillStyle = rgba(pal.edge, 0.95);
-  ctx.fillText(STRATA[stratumIdx].name.toUpperCase(), 30, 92);
+  ctx.fillText(STRATA[stratumIdx].name.toUpperCase(), hx + 2, hy + 92);
   ctx.fillStyle = 'rgba(200,195,225,0.6)';
-  ctx.fillText(`PEAK ${Math.floor(maxM)} M · BEST ${Math.floor(Math.max(bestM, maxM))} M`, 30, 110);
+  ctx.fillText(`PEAK ${Math.floor(maxM)} M · BEST ${Math.floor(Math.max(bestM, maxM))} M`, hx + 2, hy + 110);
 
   ctx.textAlign = 'right';
   ctx.fillStyle = 'rgba(200,195,225,0.6)';
-  ctx.fillText('GLASS', W - 28, 44);
+  const rx = vx1 - 28;
+  ctx.fillText('GLASS', rx, hy + 44);
   for (let k = 0; k < 3; k++) {
-    const x = W - 38 - k * 22, y = 60, broken = k < P.cracks;
+    const x = rx - 10 - k * 22, y = hy + 60, broken = k < P.cracks;
     ctx.beginPath(); ctx.arc(x, y, 7, 0, Math.PI * 2);
     ctx.fillStyle = broken ? 'rgba(255,90,115,0.25)' : 'rgba(220,232,255,0.55)';
     ctx.fill();
@@ -1311,15 +1336,16 @@ function drawHUD(pal) {
     if (broken) { ctx.beginPath(); ctx.moveTo(x - 3, y - 6); ctx.lineTo(x + 1, y); ctx.lineTo(x - 2, y + 6); ctx.stroke(); }
   }
   ctx.fillStyle = 'rgba(200,195,225,0.6)';
-  ctx.fillText('ECHOES', W - 28, 96);
+  ctx.fillText('ECHOES', rx, hy + 96);
   ctx.font = `28px ${FIGURES}`; setSpacing(0);
   ctx.fillStyle = 'rgba(255,226,160,0.95)';
-  ctx.fillText(String(echoCount), W - 28, 128);
-  if (AudioE.isMuted()) { ctx.font = `11px ${MONO}`; setSpacing(2.2); ctx.fillStyle = 'rgba(255,140,150,0.8)'; ctx.fillText('MUTED · M', W - 28, 150); }
+  ctx.fillText(String(echoCount), rx, hy + 128);
+  if (AudioE.isMuted()) { ctx.font = `11px ${MONO}`; setSpacing(2.2); ctx.fillStyle = 'rgba(255,140,150,0.8)'; ctx.fillText('MUTED · M', rx, hy + 150); }
 
   // the five notes
   setSpacing(0);
-  for (let i = 0; i < 5; i++) {
+  const base = hudBase();
+  if (tilesShown()) for (let i = 0; i < 5; i++) {
     const n = NOTES[i], x = TX0 + i * (TW + TG), y = TY;
     const pressed = held[i] && !P.winded, tethered = !!tethers[i], avail = !!inRange[i];
     ctx.beginPath();
@@ -1329,18 +1355,20 @@ function drawHUD(pal) {
     const coached = coach && coach.target && coach.target.note === i && !tethered;
     ctx.strokeStyle = rgba(n.rgb, tethered || coached ? 1 : avail ? 0.75 : 0.22);
     ctx.lineWidth = tethered ? 2 : coached ? 2 + 1.5 * (0.5 + 0.5 * Math.sin(time * 6)) : 1.2; ctx.stroke();
-    ctx.save(); ctx.translate(x + TW / 2, y + 27); ctx.scale(9, 9);
+    ctx.save(); ctx.translate(x + 18, y + TH / 2 + 2); ctx.scale(8, 8);
     shapePath(ctx, n.shape);
     ctx.fillStyle = rgba(n.rgb, avail || pressed ? 0.95 : 0.3); ctx.fill();
     ctx.restore();
-    ctx.font = `12px ${MONO}`; ctx.textAlign = 'center';
-    ctx.fillStyle = `rgba(255,255,255,${avail ? 0.85 : 0.4})`;
-    ctx.fillText(keyShort(noteKey(i)), x + TW / 2, y + TH - 9);
+    const key = keyShort(noteKey(i));
+    ctx.font = `${key.length > 2 ? 10 : 16}px ${MONO}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillStyle = `rgba(255,255,255,${avail ? 0.92 : 0.4})`;
+    ctx.fillText(key, x + 44, y + TH / 2 + 1);
   }
+  ctx.textBaseline = 'alphabetic';
   if (P.winded) {
     ctx.font = `italic 16px ${DISPLAY}`; ctx.textAlign = 'center';
     ctx.fillStyle = `rgba(255,120,140,${0.6 + 0.3 * Math.sin(time * 8)})`;
-    ctx.fillText('catching your breath', W / 2, TY - 14);
+    ctx.fillText('catching your breath', W / 2, base - 14);
   }
 
   // where is the Hush
@@ -1348,36 +1376,37 @@ function drawHUD(pal) {
   const prox = clamp(1 - gapM / 26, 0, 1);
   ctx.font = `11px ${MONO}`; setSpacing(2.6); ctx.textAlign = 'center';
   ctx.fillStyle = `rgba(255,112,136,${0.35 + 0.6 * prox * (0.6 + 0.4 * Math.sin(time * 6))})`;
-  if (!P.winded) ctx.fillText(`THE HUSH · ${Math.max(0, gapM).toFixed(0)} M BELOW`, W / 2, TY - 14);
+  if (!P.winded) ctx.fillText(`THE HUSH · ${Math.max(0, gapM).toFixed(0)} M BELOW`, W / 2, base - 14);
   setSpacing(0);
 
   const tip = state === 'play' && coach && exposure <= 0 ? coach.text : null;
   if (tip) {
     ctx.font = `italic 22px ${DISPLAY}`;
     ctx.fillStyle = `rgba(240,236,255,${0.75 + 0.2 * Math.sin(time * 3)})`;
-    ctx.fillText(tip, W / 2, TY - 46);
+    ctx.fillText(tip, W / 2, base - 44);
   }
   if (exposure > 0 && state === 'play') {
     ctx.font = `italic 30px ${DISPLAY}`;
     ctx.fillStyle = `rgba(255,120,140,${0.7 + 0.3 * Math.sin(time * 16)})`;
-    ctx.fillText('Sing your way out of the Hush!', W / 2, H * 0.42);
+    ctx.fillText('Sing your way out of the Hush!', W / 2, vy0 + (vy1 - vy0) * 0.42);
   }
 
   if (bannerT > 0) {
     const a = Math.min(1, (4.5 - bannerT) / 0.8) * Math.min(1, bannerT / 1.2);
+    const bannerY = vy0 + 150 + Math.max(0, (vy1 - vy0) * 0.25 - 150);
     ctx.textAlign = 'center';
     ctx.font = `12px ${MONO}`; setSpacing(4);
     ctx.fillStyle = rgba(pal.edge, a * 0.95);
-    ctx.fillText(`STRATUM ${ROMAN[stratumIdx]}  ·  ${STRATA[stratumIdx].at} M`, W / 2, H * 0.3 - 54);
+    ctx.fillText(`STRATUM ${ROMAN[stratumIdx]}  ·  ${STRATA[stratumIdx].at} M`, W / 2, bannerY - 54);
     setSpacing(1);
     ctx.font = `60px ${DISPLAY}`;
     ctx.fillStyle = `rgba(246,242,255,${a})`;
-    ctx.fillText(STRATA[stratumIdx].name, W / 2, H * 0.3);
+    ctx.fillText(STRATA[stratumIdx].name, W / 2, bannerY);
     setSpacing(0);
     if (STRATA[stratumIdx].warn) {
       ctx.font = `italic 20px ${DISPLAY}`;
       ctx.fillStyle = `rgba(255,140,160,${a * 0.95})`;
-      ctx.fillText(STRATA[stratumIdx].warn, W / 2, H * 0.3 + 38);
+      ctx.fillText(STRATA[stratumIdx].warn, W / 2, bannerY + 38);
     }
   }
 }
@@ -1612,7 +1641,7 @@ document.addEventListener('visibilitychange', () => { if (document.hidden) pause
 function pointerNote(e) {
   const x = (e.clientX - ox) / scale, y = (e.clientY - oy) / scale;
   if (e.pointerType === 'touch') {
-    if (y < H * 0.6) return -1;
+    if (y < vy0 + (vy1 - vy0) * 0.6) return -1;
     return clamp(Math.floor((x - vx0) / (vx1 - vx0) * 5), 0, 4);
   }
   if (y < TY - 30 || y > TY + TH + 20 || x < TX0 - 20 || x > TX0 + 5 * TW + 4 * TG + 20) return -1;
@@ -1709,6 +1738,17 @@ for (const b of document.querySelectorAll('#layoutPicker [data-layout]')) {
   });
 }
 $('btnBind').addEventListener('click', () => startBinding());
+function renderTiles() {
+  $('btnTiles').setAttribute('aria-pressed', String(tilesOn));
+  $('btnTiles').textContent = `Note tiles: ${tilesOn ? 'on' : 'off'}`;
+}
+$('btnTiles').addEventListener('click', () => {
+  tilesOn = !tilesOn;
+  try { localStorage.setItem('hollowsong.tiles', tilesOn ? 'on' : 'off'); } catch (e) { /* storage unavailable */ }
+  track(`tiles/${tilesOn ? 'on' : 'off'}`);
+  renderTiles();
+});
+renderTiles();
 
 try {
   const saved = JSON.parse(localStorage.getItem('hollowsong.custom') || 'null');
