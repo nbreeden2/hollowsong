@@ -30,6 +30,7 @@ The note tiles along the bottom of the screen show which notes are in reach. Onc
 | Pause | `P` or `Esc` | Start | |
 | Mute | `M` | | |
 | Hear your song (end screen) | `R` | Y | Button |
+| Back to the title screen | `Esc` on the end screen, or **Title screen** in the pause menu | | Button |
 
 `Enter`, `Esc`, `Tab`, `P`, `M`, `R` and `1`–`5` run the game, so they can't be used in a custom layout.
 
@@ -44,6 +45,10 @@ The note tiles along the bottom of the screen show which notes are in reach. Onc
 - **Shards** (red, jagged) crack your glass. Three cracks and you shatter.
 - **Moths** (pale, from the third stratum) chase any song within reach and drink your breath while they're touching you. Go quiet and they lose interest.
 - **Echoes** (gold) refill 30% of your breath and push the Hush back 4.5 m. The extra room fades over about 7 seconds, and collecting several echoes stacks it, up to 13.5 m.
+
+## Practice
+
+Choose **Practice** on the title screen and pick a stratum to start in. There is no Hush: you start on a rock ledge at the bottom of that stratum, and if you fall you land back on it. Shards still crack your glass, so a practice run ends if you shatter. To end it yourself, pause (`P` or `Esc`) and choose **End practice** to see your song, or **Title screen** to go straight back. Practice runs don't count toward your best height. All five strata are open from the start, so you can learn the shards and moths before you reach them in a real climb.
 
 ## Strata
 
@@ -64,6 +69,8 @@ The live game reports anonymous events to GoatCounter (https://hollowsong.goatco
 | Event path | When |
 | --- | --- |
 | `start/first`, `start/again` | A run begins (first run of the visit, or a retry) |
+| `start/practice/s<stratum>` | A practice run begins in that stratum |
+| `practice/s<stratum>/<cause>/<climbed>/<duration>` | A practice run ends. Cause is `shatter` or `quit`. Climbed is how far above the starting ledge you got, as a range. |
 | `run/<cause>/s<stratum>/<height>/<layout>/<input>/<duration>` | A run ends. Cause is `hush`, `shatter` or `quit` (tab closed mid-run). Height and duration are ranges, for example `100-149m` and `1-2min`. Input is `keyboard`, `gamepad`, `mouse`, `touch`, `mixed` or `none`. |
 | `listen` | Someone plays back their song |
 | `layout/<id>` | Someone picks a keyboard layout on the title screen |

@@ -35,9 +35,30 @@
     background: linear-gradient(90deg, var(--scrim) 0%, rgba(6, 5, 12, 0.78) 48%, rgba(6, 5, 12, 0) 88%);
   }
   .sheet { max-width: 35rem; min-width: 0; display: flex; flex-direction: column; gap: 1.05rem; margin-block: auto; }
+  /* Title: intro and Begin first; on wide windows the setup sits beside it and How to play spans below. */
+  .intro, .setup, .howto { display: flex; flex-direction: column; gap: 1.05rem; min-width: 0; }
+  .title-sheet { gap: 1.6rem; }
+  @media (min-width: 1100px) {
+    #title { background: linear-gradient(90deg, var(--scrim) 0%, rgba(6, 5, 12, 0.85) 62%, rgba(6, 5, 12, 0) 96%); }
+    #title .title-sheet {
+      max-width: 64rem; display: grid; align-items: start; gap: 1.8rem 3rem;
+      grid-template-columns: minmax(0, 1fr) minmax(0, 27rem);
+      grid-template-areas: "intro setup" "howto howto";
+    }
+    .intro { grid-area: intro; }
+    .setup { grid-area: setup; padding-top: 2.2rem; }
+    .howto { grid-area: howto; }
+    .howto .rules { grid-template-columns: auto minmax(0, 1fr) auto minmax(0, 1fr); column-gap: 1.1rem; }
+    .howto .rules dd { padding-right: 1.4rem; }
+  }
+  @media (max-height: 760px) {
+    .lede { font-size: 1rem; }
+    .intro, .setup, .howto { gap: 0.75rem; }
+    .setup { padding-top: 0; }
+  }
   .eyebrow { margin: 0; font-family: var(--mono); font-size: 0.72rem; letter-spacing: 0.26em; text-transform: uppercase; color: var(--amber); }
   h1, h2 { margin: 0; font-family: var(--display); font-weight: 400; line-height: 0.9; text-wrap: balance; }
-  h1 { font-size: clamp(3.4rem, 10vw, 6.8rem); letter-spacing: 0.03em; }
+  h1 { font-size: clamp(3rem, min(10vw, 13vh), 6.8rem); letter-spacing: 0.03em; }
   h2 { font-size: clamp(3rem, 9vw, 5.6rem); font-variant-numeric: tabular-nums; }
   #overHeight { font-family: var(--body); font-weight: 400; letter-spacing: -0.02em; }
   h2 small { font-size: 0.4em; letter-spacing: 0.08em; color: var(--mist); }
@@ -107,40 +128,55 @@
 <canvas id="game" aria-label="Hollowsong play field"></canvas>
 
 <section id="title" class="screen" aria-labelledby="titleHeading">
-  <div class="sheet">
-    <p class="eyebrow">A game of singing upward</p>
-    <h1 id="titleHeading">Hollowsong</h1>
-    <p class="lede">You are a seed of blown glass at the bottom of Hollowdeep, a cave whose crystals still remember their notes. <em>The Hush</em> is rising from below, and whatever it reaches goes quiet for good. Sing, and climb.</p>
-    <div class="layout" id="layoutPicker">
-      <div class="seg" role="group" aria-label="Keyboard layout">
-        <button type="button" data-layout="left" aria-pressed="true">Left hand</button>
-        <button type="button" data-layout="right" aria-pressed="false">Right hand</button>
-        <button type="button" data-layout="classic" aria-pressed="false">Classic</button>
-        <button type="button" data-layout="custom" aria-pressed="false">Custom</button>
+  <div class="sheet title-sheet">
+    <div class="intro">
+      <p class="eyebrow">A game of singing upward</p>
+      <h1 id="titleHeading">Hollowsong</h1>
+      <p class="lede">You are a seed of blown glass at the bottom of Hollowdeep, a cave whose crystals still remember their notes. <em>The Hush</em> is rising from below, and whatever it reaches goes quiet for good. Sing, and climb.</p>
+      <div class="actions">
+        <button class="cta" id="btnBegin" type="button">Begin <kbd>Enter</kbd></button>
       </div>
-      <ul class="keys" id="keyChips"></ul>
-      <div class="layout-row">
-        <p class="layout-note" id="layoutNote" aria-live="polite">Fingers rest on A S D F, thumb on the space bar.</p>
-        <button type="button" class="cta ghost small" id="btnBind" hidden>Set my keys</button>
+      <p class="fine">Number keys 1–5 work in every layout · Gamepad A B X Y RB · Mouse or touch: the five tiles at the bottom<br>Enter start · P pause · M mute · Best climb: <span id="bestTitle">none yet</span><br>Anonymous play stats (height reached, run length, layout) are counted with GoatCounter. No cookies, nothing personal.</p>
+    </div>
+    <div class="setup">
+      <div class="layout" id="layoutPicker">
+        <div class="seg" role="group" aria-label="Keyboard layout">
+          <button type="button" data-layout="left" aria-pressed="true">Left hand</button>
+          <button type="button" data-layout="right" aria-pressed="false">Right hand</button>
+          <button type="button" data-layout="classic" aria-pressed="false">Classic</button>
+          <button type="button" data-layout="custom" aria-pressed="false">Custom</button>
+        </div>
+        <ul class="keys" id="keyChips"></ul>
+        <div class="layout-row">
+          <p class="layout-note" id="layoutNote" aria-live="polite">Fingers rest on A S D F, thumb on the space bar.</p>
+          <button type="button" class="cta ghost small" id="btnBind" hidden>Set my keys</button>
+        </div>
+        <div class="layout-row">
+          <button type="button" class="cta ghost small" id="btnTiles" aria-pressed="true">Note tiles: on</button>
+          <p class="layout-note">Hide them for more room once you know your keys. They always show for mouse and touch.</p>
+        </div>
       </div>
-      <div class="layout-row">
-        <button type="button" class="cta ghost small" id="btnTiles" aria-pressed="true">Note tiles: on</button>
-        <p class="layout-note">Turn the tiles off for more room once you know your keys. They always show if you play with a mouse or touch.</p>
+      <div class="layout" id="modePicker">
+        <div class="seg" role="group" aria-label="Mode">
+          <button type="button" data-mode="climb" aria-pressed="true">Climb</button>
+          <button type="button" data-mode="practice" aria-pressed="false">Practice</button>
+        </div>
+        <div class="seg" id="stratumPicker" role="group" aria-label="Where practice starts" hidden></div>
+        <p class="layout-note" id="modeNote" aria-live="polite"></p>
       </div>
     </div>
-    <dl class="rules">
-      <dt>Sing</dt><dd>Hold a key to sing its note. The nearest crystal of that colour within reach pulls you toward it.</dd>
-      <dt>Handoff</dt><dd>Before you let go of a note, start singing the next crystal above. That's how you climb without falling.</dd>
-      <dt>Chords</dt><dd>Hold two or three notes and you are pulled several ways at once. Chords are how you steer.</dd>
-      <dt>Breath</dt><dd>Singing spends breath. Going quiet refills it, but you start to fall.</dd>
-      <dt>Wear</dt><dd>A crystal cracks while you lean on it, and soon shatters. Keep moving.</dd>
-      <dt>Danger</dt><dd>Red shards crack your glass; three cracks and you break. Pale moths follow any song and drink your breath. Go quiet to lose them.</dd>
-      <dt>Echoes</dt><dd>Gold echoes refill your breath and push the Hush back down.</dd>
-    </dl>
-    <div class="actions">
-      <button class="cta" id="btnBegin" type="button">Begin <kbd>Enter</kbd></button>
-    </div>
-    <p class="fine">Number keys 1–5 work in every layout · Gamepad A B X Y RB · Mouse or touch: the five tiles at the bottom<br>Enter start · P pause · M mute · Best climb: <span id="bestTitle">none yet</span><br>Anonymous play stats (height reached, run length, layout) are counted with GoatCounter. No cookies, nothing personal.</p>
+    <section class="howto" aria-labelledby="howtoHeading">
+      <p class="eyebrow" id="howtoHeading">How to play</p>
+      <dl class="rules">
+        <dt>Sing</dt><dd>Hold a key to sing its note. The nearest crystal of that colour within reach pulls you toward it.</dd>
+        <dt>Handoff</dt><dd>Before you let go of a note, start singing the next crystal above. That's how you climb without falling.</dd>
+        <dt>Chords</dt><dd>Hold two or three notes and you are pulled several ways at once. Chords are how you steer.</dd>
+        <dt>Breath</dt><dd>Singing spends breath. Going quiet refills it, but you start to fall.</dd>
+        <dt>Wear</dt><dd>A crystal cracks while you lean on it, and soon shatters. Keep moving.</dd>
+        <dt>Danger</dt><dd>Red shards crack your glass; three cracks and you break. Pale moths follow any song and drink your breath. Go quiet to lose them.</dd>
+        <dt>Echoes</dt><dd>Gold echoes refill your breath and push the Hush back down.</dd>
+      </dl>
+    </section>
   </div>
 </section>
 
@@ -150,6 +186,8 @@
     <h2 id="pauseHeading">Paused</h2>
     <div class="actions">
       <button class="cta" id="btnResume" type="button">Resume <kbd>P</kbd></button>
+      <button class="cta ghost" id="btnEndPractice" type="button" hidden>End practice</button>
+      <button class="cta ghost" id="btnPauseTitle" type="button">Title screen</button>
     </div>
   </div>
 </section>
@@ -173,6 +211,7 @@
     <div class="actions">
       <button class="cta ghost" id="btnListen" type="button">Hear your song <kbd>R</kbd></button>
       <button class="cta" id="btnAgain" type="button">Sing again <kbd>Enter</kbd></button>
+      <button class="cta ghost" id="btnTitle" type="button">Title screen <kbd>Esc</kbd></button>
     </div>
   </div>
 </section>

@@ -391,6 +391,9 @@ showBest();
 
 // ------------------------------------------------------------------- state
 let state = 'title';         // title | play | paused | dying | over
+// Practice: no Hush, start at any stratum, and the run doesn't count toward your best.
+let practice = false, practiceStratum = 0;
+try { practiceStratum = clamp(Number(localStorage.getItem('hollowsong.practiceStratum')) || 0, 0, 4); } catch (e) { /* storage unavailable */ }
 let rand, nL1, nL2, nR1, nR2;
 let P, crystals, shards, echoes, moths, particles, texts;
 let camY, silenceY, hushTimer, nextBandY, lastNote, maxM, echoCount, notesSung, chordsSung;
@@ -406,6 +409,7 @@ const inRange = [null, null, null, null, null];
 const ptrNotes = new Map();
 
 const heightM = y => (FLOOR_Y - 12 - y) / PX_PER_M;
+let floorY = FLOOR_Y; // the rock you stand on: the cave floor, or in practice a ledge at the chosen stratum
 const noteFreq = i => STRATA[stratumIdx].root * 2 * Math.pow(2, NOTES[i].deg / 12);
 
 function walls(y) {
@@ -420,17 +424,19 @@ function walls(y) {
 function reset() {
   rand = mulberry32((Math.random() * 4294967296) >>> 0);
   nL1 = makeNoise(rand); nL2 = makeNoise(rand); nR1 = makeNoise(rand); nR2 = makeNoise(rand);
-  P = { x: W / 2, y: FLOOR_Y - 12, vx: 0, vy: 0, r: 12, breath: 100, winded: false, cracks: 0, inv: 0, muffled: 0, glow: [210, 222, 255] };
+  const startM = practice ? STRATA[practiceStratum].at : 0;
+  floorY = FLOOR_Y - startM * PX_PER_M;
+  P = { x: W / 2, y: floorY - 12, vx: 0, vy: 0, r: 12, breath: 100, winded: false, cracks: 0, inv: 0, muffled: 0, glow: [210, 222, 255] };
   crystals = []; shards = []; echoes = []; moths = []; particles = []; texts = [];
   camAnchor = CAM_CLIMB;
   camY = P.y - camScreenY();
-  silenceY = FLOOR_Y + 600;
-  hushTimer = 0; nextBandY = 40; lastNote = Math.floor(rand() * 5);
-  spine = { x: W / 2, y: FLOOR_Y - 12, note: -1, nextY: FLOOR_Y - 12 - 120 };
-  maxM = 0; echoCount = 0; notesSung = 0; chordsSung = 0; prevSingCount = 0;
+  silenceY = practice ? floorY + 5000 : FLOOR_Y + 600;
+  hushTimer = 0; nextBandY = floorY - 120; lastNote = Math.floor(rand() * 5);
+  spine = { x: W / 2, y: floorY - 12, note: -1, nextY: floorY - 12 - 120 };
+  maxM = startM; echoCount = 0; notesSung = 0; chordsSung = 0; prevSingCount = 0;
   hushStarted = false; exposure = 0; coachTarget = null; coach = null;
   echoLead = 0; callouts = []; explained = new Set(); slowT = 0;
-  playTime = 0; song = []; shake = 0; stratumIdx = 0; bannerT = 0; dieT = 0; overT = 0; cleanupT = 0;
+  playTime = 0; song = []; shake = 0; stratumIdx = stratumAt(startM); bannerT = 0; dieT = 0; overT = 0; cleanupT = 0;
   for (let i = 0; i < 5; i++) { tethers[i] = null; inRange[i] = null; }
   genUpTo(camY - 600);
 }
@@ -683,7 +689,7 @@ function update(dt) {
   const [L, R] = walls(P.y);
   if (P.x - P.r < L) { P.x = L + P.r; if (P.vx < -60) AudioE.tink(); P.vx = Math.abs(P.vx) * 0.45; }
   if (P.x + P.r > R) { P.x = R - P.r; if (P.vx > 60) AudioE.tink(); P.vx = -Math.abs(P.vx) * 0.45; }
-  if (P.y + P.r > FLOOR_Y) { P.y = FLOOR_Y - P.r; if (P.vy > 90) AudioE.tink(); P.vy = -Math.abs(P.vy) * 0.3; P.vx *= 0.9; }
+  if (P.y + P.r > floorY) { P.y = floorY - P.r; if (P.vy > 90) AudioE.tink(); P.vy = -Math.abs(P.vy) * 0.3; P.vx *= 0.9; }
   P.inv = Math.max(0, P.inv - dt);
   P.muffled = Math.max(0, P.muffled - dt);
 
@@ -756,26 +762,9 @@ function update(dt) {
     }
   }
 
-  // the Hush
-  // It waits until you've started climbing (or 20 s pass), rises slowly at first,
-  // and you can survive a brief dip into it if you sing your way back out.
-  hushTimer += dt;
-  if (!hushStarted && (maxM > 8 || hushTimer > 20)) {
-    hushStarted = true;
-    say(P.x, P.y - 40, 'the Hush stirs below you', [255, 140, 160]);
-  }
-  if (hushStarted) silenceY -= S.hush * lerp(1, 0.45, ease) * (1 + Math.min(0.5, playTime / 600)) * dt;
-  echoLead = Math.max(0, echoLead - ECHO_FADE * dt);
-  silenceY = Math.min(silenceY, P.y + lerp(HUSH_LEAD, 1000, ease) + echoLead);
-  for (const c of crystals) if (c.alive && c.y > silenceY - 6) shatterCrystal(c, true);
-  const gap = silenceY - P.y;
-  AudioE.setHush(clamp(1 - (gap - 30) / 420, 0, 1));
-  if (P.y + P.r * 0.3 > silenceY) {
-    exposure += dt;
-    if (exposure > 0.8 + ease) { die('hush'); return; }
-  } else {
-    exposure = Math.max(0, exposure - dt);
-  }
+  // the Hush (there is none in practice)
+  if (practice) AudioE.setHush(0);
+  else if (updateHush(dt, S, ease)) return;
 
   // world upkeep
   genUpTo(camY + vy0 - 500);
@@ -791,6 +780,31 @@ function update(dt) {
   for (const c of crystals) c.ring = Math.max(0, c.ring - dt * 2);
   updateCallouts(dt);
   updateCamera(dt);
+}
+
+// The Hush rises from below and silences what it reaches. Returns true if it
+// ended the run.
+function updateHush(dt, S, ease) {
+  // It waits until you've started climbing (or 20 s pass), rises slowly at first,
+  // and you can survive a brief dip into it if you sing your way back out.
+  hushTimer += dt;
+  if (!hushStarted && (maxM > 8 || hushTimer > 20)) {
+    hushStarted = true;
+    say(P.x, P.y - 40, 'the Hush stirs below you', [255, 140, 160]);
+  }
+  if (hushStarted) silenceY -= S.hush * lerp(1, 0.45, ease) * (1 + Math.min(0.5, playTime / 600)) * dt;
+  echoLead = Math.max(0, echoLead - ECHO_FADE * dt);
+  silenceY = Math.min(silenceY, P.y + lerp(HUSH_LEAD, 1000, ease) + echoLead);
+  for (const c of crystals) if (c.alive && c.y > silenceY - 6) shatterCrystal(c, true);
+  const gap = silenceY - P.y;
+  AudioE.setHush(clamp(1 - (gap - 30) / 420, 0, 1));
+  if (P.y + P.r * 0.3 > silenceY) {
+    exposure += dt;
+    if (exposure > 0.8 + ease) { die('hush'); return true; }
+  } else {
+    exposure = Math.max(0, exposure - dt);
+  }
+  return false;
 }
 
 // Where the player sits on screen, as a fraction of the window's height: low
@@ -832,10 +846,13 @@ function die(cause) {
     shake = 16;
   }
   AudioE.setDrone(STRATA[stratumIdx].root, 0.04);
-  if (maxM > bestM) {
-    bestM = maxM;
-    try { localStorage.setItem('hollowsong.best', String(Math.floor(bestM))); } catch (e) { /* storage unavailable */ }
-  }
+  saveBest();
+}
+function saveBest() {
+  if (practice || maxM <= bestM) return;
+  bestM = maxM;
+  try { localStorage.setItem('hollowsong.best', String(Math.floor(bestM))); } catch (e) { /* storage unavailable */ }
+  showBest();
 }
 
 // --------------------------------------------------------------------- draw
@@ -957,10 +974,10 @@ function drawWalls(pal, y0, y1) {
 }
 
 function drawFloor(pal, y1) {
-  if (FLOOR_Y > y1) return;
+  if (floorY > y1) return;
   ctx.beginPath();
-  ctx.moveTo(vx0 - 20, FLOOR_Y);
-  for (let x = Math.floor((vx0 - 20) / 20) * 20; x <= vx1 + 20; x += 20) ctx.lineTo(x, FLOOR_Y + hash(Math.round(x / 20) + 4242) * 6);
+  ctx.moveTo(vx0 - 20, floorY);
+  for (let x = Math.floor((vx0 - 20) / 20) * 20; x <= vx1 + 20; x += 20) ctx.lineTo(x, floorY + hash(Math.round(x / 20) + 4242) * 6);
   ctx.lineTo(vx1 + 20, y1 + 60); ctx.lineTo(vx0 - 20, y1 + 60); ctx.closePath();
   ctx.fillStyle = rgba(pal.rock, 1); ctx.fill();
   ctx.strokeStyle = rgba(pal.edge, 0.55); ctx.lineWidth = 1.4; ctx.stroke();
@@ -1321,7 +1338,7 @@ function drawHUD(pal) {
   ctx.fillStyle = rgba(pal.edge, 0.95);
   ctx.fillText(STRATA[stratumIdx].name.toUpperCase(), hx + 2, hy + 92);
   ctx.fillStyle = 'rgba(200,195,225,0.6)';
-  ctx.fillText(`PEAK ${Math.floor(maxM)} M · BEST ${Math.floor(Math.max(bestM, maxM))} M`, hx + 2, hy + 110);
+  ctx.fillText(`PEAK ${Math.floor(maxM)} M · BEST ${Math.floor(practice ? bestM : Math.max(bestM, maxM))} M`, hx + 2, hy + 110);
 
   ctx.textAlign = 'right';
   ctx.fillStyle = 'rgba(200,195,225,0.6)';
@@ -1376,7 +1393,8 @@ function drawHUD(pal) {
   const prox = clamp(1 - gapM / 26, 0, 1);
   ctx.font = `11px ${MONO}`; setSpacing(2.6); ctx.textAlign = 'center';
   ctx.fillStyle = `rgba(255,112,136,${0.35 + 0.6 * prox * (0.6 + 0.4 * Math.sin(time * 6))})`;
-  if (!P.winded) ctx.fillText(`THE HUSH · ${Math.max(0, gapM).toFixed(0)} M BELOW`, W / 2, base - 14);
+  if (practice) { ctx.fillStyle = 'rgba(200,195,225,0.55)'; if (!P.winded) ctx.fillText('PRACTICE · NO HUSH · ESC TO PAUSE OR END', W / 2, base - 14); }
+  else if (!P.winded) ctx.fillText(`THE HUSH · ${Math.max(0, gapM).toFixed(0)} M BELOW`, W / 2, base - 14);
   setSpacing(0);
 
   const tip = state === 'play' && coach && exposure <= 0 ? coach.text : null;
@@ -1526,7 +1544,8 @@ function reportRun(cause) {
   const secs = playTime;
   const dur = secs < 15 ? 'under-15s' : secs < 30 ? '15-30s' : secs < 60 ? '30-60s' : secs < 120 ? '1-2min' : secs < 300 ? '2-5min' : '5min+';
   const input = inputsUsed.size === 0 ? 'none' : inputsUsed.size > 1 ? 'mixed' : [...inputsUsed][0];
-  track(`run/${cause}/s${stratumIdx + 1}/${height}/${layoutId}/${input}/${dur}`);
+  if (practice) track(`practice/s${practiceStratum + 1}/${cause}/${bucket(Math.floor(maxM - STRATA[practiceStratum].at), [0, 10, 30, 60, 100, 150, 220, 300, 400, 520], 'm')}/${dur}`);
+  else track(`run/${cause}/s${stratumIdx + 1}/${height}/${layoutId}/${input}/${dur}`);
 }
 window.addEventListener('pagehide', () => { if (state === 'play' || state === 'paused' || state === 'dying') reportRun(state === 'dying' ? deathCause : 'quit'); });
 
@@ -1543,10 +1562,10 @@ function begin() {
   runNo++;
   runReported = false;
   inputsUsed.clear();
-  track(runNo === 1 ? 'start/first' : 'start/again');
+  track(practice ? `start/practice/s${practiceStratum + 1}` : runNo === 1 ? 'start/first' : 'start/again');
   hushTimer = 0;
   bannerT = 4.5;
-  AudioE.setDrone(STRATA[0].root, 0.12);
+  AudioE.setDrone(STRATA[stratumIdx].root, 0.12);
   AudioE.setHush(0);
 }
 function restart() {
@@ -1561,6 +1580,7 @@ function pause() {
   state = 'paused';
   silenceVoices();
   pauseEl.hidden = false;
+  $('btnEndPractice').hidden = !practice;
   $('btnResume').focus({ preventScroll: true });
 }
 function resume() {
@@ -1569,14 +1589,38 @@ function resume() {
   state = 'play';
   AudioE.init();
 }
+function endPractice() {
+  if (state !== 'paused' || !practice) return;
+  pauseEl.hidden = true;
+  deathCause = 'ended';
+  showOver();
+}
+// Back to the title from the end screen, or straight from the pause menu (which
+// ends the run; a climb still keeps its height as your best).
+function toTitle() {
+  if (state === 'paused') {
+    pauseEl.hidden = true;
+    reportRun('quit');
+    saveBest();
+    AudioE.setDrone(STRATA[stratumIdx].root, 0.04);
+    AudioE.setHush(0);
+  } else if (state === 'over') {
+    stopSong();
+    overEl.hidden = true;
+  } else return;
+  reset();
+  state = 'title';
+  titleEl.hidden = false;
+  $('btnBegin').focus({ preventScroll: true });
+}
 function showOver() {
-  reportRun(deathCause);
+  reportRun(deathCause === 'ended' ? 'quit' : deathCause);
   state = 'over'; overT = 0;
   AudioE.setHush(0);
   $('overHeight').textContent = Math.floor(maxM);
-  $('overStratum').textContent = `Stratum ${ROMAN[stratumIdx]} · ${STRATA[stratumIdx].name}`;
-  $('overCause').textContent = deathCause === 'hush'
-    ? 'The Hush reached you, and your song went quiet.'
+  $('overStratum').textContent = `${practice ? 'Practice · ' : ''}Stratum ${ROMAN[stratumIdx]} · ${STRATA[stratumIdx].name}`;
+  $('overCause').textContent = deathCause === 'hush' ? 'The Hush reached you, and your song went quiet.'
+    : deathCause === 'ended' ? `You climbed ${Math.floor(maxM - STRATA[practiceStratum].at)} m in practice.`
     : 'Your glass gave way.';
   const tips = [
     'Hold the next note before you let go of the one you are on. That handoff is how you climb without falling.',
@@ -1603,7 +1647,7 @@ window.addEventListener('keydown', e => {
   if (e.ctrlKey || e.metaKey || e.altKey) return;
   if (binding >= 0) { e.preventDefault(); bindKey(e.code); return; }
   // Enter on a layout button selects it rather than starting the game.
-  if ((e.code === 'Enter' || e.code === 'NumpadEnter') && e.target.closest && e.target.closest('#layoutPicker')) return;
+  if ((e.code === 'Enter' || e.code === 'NumpadEnter') && e.target.closest && e.target.closest('#layoutPicker, #modePicker')) return;
   if (e.code in KEYMAP) {
     e.preventDefault();
     keyHeld[KEYMAP[e.code]] = true;
@@ -1625,6 +1669,7 @@ window.addEventListener('keydown', e => {
       break;
     case 'KeyP': case 'Escape':
       if (state === 'play') pause(); else if (state === 'paused') resume();
+      else if (state === 'over' && e.code === 'Escape') toTitle();
       break;
     case 'KeyM':
       AudioE.toggleMute();
@@ -1666,7 +1711,7 @@ cv.addEventListener('pointerup', ptrEnd);
 cv.addEventListener('pointercancel', ptrEnd);
 
 titleEl.addEventListener('click', e => {
-  if (binding >= 0 || e.target.closest('#layoutPicker')) return;
+  if (binding >= 0 || e.target.closest('#layoutPicker, #modePicker')) return;
   begin();
 });
 
@@ -1761,6 +1806,44 @@ if (navigator.keyboard && navigator.keyboard.getLayoutMap) {
   navigator.keyboard.getLayoutMap().then(m => { layoutMap = m; renderPicker(); }).catch(() => {});
 }
 $('btnResume').addEventListener('click', e => { e.stopPropagation(); resume(); });
+$('btnEndPractice').addEventListener('click', e => { e.stopPropagation(); endPractice(); });
+$('btnPauseTitle').addEventListener('click', e => { e.stopPropagation(); toTitle(); });
+$('btnTitle').addEventListener('click', () => toTitle());
+
+// Mode picker: Climb or Practice, and where practice starts.
+(function buildStrata() {
+  const g = $('stratumPicker');
+  STRATA.forEach((st, i) => {
+    const b = document.createElement('button');
+    b.type = 'button'; b.dataset.stratum = i;
+    b.textContent = `${ROMAN[i]} · ${st.at} m`;
+    b.title = st.name;
+    g.appendChild(b);
+  });
+})();
+function renderMode() {
+  for (const b of document.querySelectorAll('#modePicker [data-mode]')) b.setAttribute('aria-pressed', String((b.dataset.mode === 'practice') === practice));
+  for (const b of document.querySelectorAll('#stratumPicker [data-stratum]')) b.setAttribute('aria-pressed', String(Number(b.dataset.stratum) === practiceStratum));
+  $('stratumPicker').hidden = !practice;
+  const st = STRATA[practiceStratum];
+  $('modeNote').textContent = practice
+    ? `No Hush. You start on a ledge in ${st.name} and can take your time.${st.warn ? ' ' + st.warn : ''} Practice runs don't count toward your best.`
+    : 'The real climb. The Hush rises behind you, and your best height counts.';
+}
+function setMode(isPractice, stratum) {
+  practice = isPractice;
+  if (stratum != null) {
+    practiceStratum = stratum;
+    try { localStorage.setItem('hollowsong.practiceStratum', String(stratum)); } catch (e) { /* storage unavailable */ }
+  }
+  reset(); // rebuild the cave behind the title at the new starting point
+  renderMode();
+}
+for (const b of document.querySelectorAll('#modePicker [data-mode]')) b.addEventListener('click', () => setMode(b.dataset.mode === 'practice'));
+for (const b of document.querySelectorAll('#stratumPicker [data-stratum]')) {
+  b.addEventListener('click', () => setMode(true, Number(b.dataset.stratum)));
+}
+renderMode();
 $('btnAgain').addEventListener('click', () => restart());
 $('btnListen').addEventListener('click', () => toggleSong());
 
