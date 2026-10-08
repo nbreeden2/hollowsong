@@ -24,6 +24,10 @@ const COACH_M = 60;         // live hints for new players stop at this height
 const BREATH_COST = 11;     // per note, per second
 const BREATH_REGEN = 28;
 const CRYSTAL_WEAR = 0.19;  // charge lost per second while tethered
+const TETHER_AIM = 60;      // early on, a note pulls toward this far above its crystal, so you rise past it instead of hanging below
+const TETHER_AIM_FULL = 0;  // ...shrinking to this by EASE_M
+const ECHO_PUSH = 90;       // how far an echo pushes the Hush back
+const ECHO_FADE = 12;       // px per second: an echo's extra room fades over ~7.5 s
 const DISPLAY = '"Italiana", "Cormorant Garamond", Georgia, serif';
 const FIGURES = '"Spectral", Georgia, serif';
 const MONO = '"Spline Sans Mono", ui-monospace, Consolas, monospace';
@@ -116,9 +120,9 @@ function shapePath(g, shape) {
 // Strata: each band of the cave has its own key, palette and dangers.
 const STRATA = [
   { at: 0,    name: 'The Root Choir',         root: 110.00, sky: ['#170f2e', '#07060f'], rock: '#1c1531', edge: '#8a6ad6', hush: 40,  band: 150, pair: 0.62, shard: 0.00, moth: 0.00 },
-  { at: 220,  name: 'Gallery of Lanterns',    root: 146.83, sky: ['#26170a', '#0b0604'], rock: '#2a1b10', edge: '#d8913d', hush: 55,  band: 158, pair: 0.55, shard: 0.30, moth: 0.00 },
-  { at: 520,  name: 'The Moth Vaults',        root: 98.00,  sky: ['#0e1f1d', '#040a0a'], rock: '#13231f', edge: '#5fbca0', hush: 70,  band: 166, pair: 0.50, shard: 0.34, moth: 0.17 },
-  { at: 900,  name: 'Throat of the Mountain', root: 130.81, sky: ['#2b0c17', '#0b0306'], rock: '#2d111a', edge: '#e05a70', hush: 85,  band: 172, pair: 0.48, shard: 0.48, moth: 0.13 },
+  { at: 220,  name: 'Gallery of Lanterns',    root: 146.83, sky: ['#26170a', '#0b0604'], rock: '#2a1b10', edge: '#d8913d', hush: 55,  band: 158, pair: 0.55, shard: 0.30, moth: 0.00, warn: 'Red shards appear here. Touching one cracks your glass.' },
+  { at: 520,  name: 'The Moth Vaults',        root: 98.00,  sky: ['#0e1f1d', '#040a0a'], rock: '#13231f', edge: '#5fbca0', hush: 70,  band: 166, pair: 0.50, shard: 0.34, moth: 0.17, warn: 'Moths live here. They drink your breath while you sing.' },
+  { at: 900,  name: 'Throat of the Mountain', root: 130.81, sky: ['#2b0c17', '#0b0306'], rock: '#2d111a', edge: '#e05a70', hush: 85,  band: 172, pair: 0.48, shard: 0.48, moth: 0.13, warn: 'The cave narrows, and the Hush rises faster.' },
   { at: 1400, name: 'The Last Aperture',      root: 164.81, sky: ['#1d3050', '#0a1122'], rock: '#1d283b', edge: '#b0ceff', hush: 100, band: 182, pair: 0.45, shard: 0.52, moth: 0.20 },
 ];
 STRATA.forEach(s => { s.sky0 = hexRgb(s.sky[0]); s.sky1 = hexRgb(s.sky[1]); s.rockRgb = hexRgb(s.rock); s.edgeRgb = hexRgb(s.edge); });
@@ -387,7 +391,7 @@ let rand, nL1, nL2, nR1, nR2;
 let P, crystals, shards, echoes, moths, particles, texts;
 let camY, silenceY, hushTimer, nextBandY, lastNote, maxM, echoCount, notesSung, chordsSung;
 let playTime, song, deathCause, shake, stratumIdx, bannerT, dieT, overT, cleanupT, prevSingCount;
-let hushStarted, exposure, coachTarget, spine;
+let hushStarted, exposure, coachTarget, coach, spine, echoLead, callouts, explained, slowT;
 let time = 0;
 const keyHeld = [false, false, false, false, false];
 const padHeld = [false, false, false, false, false];
@@ -419,7 +423,8 @@ function reset() {
   hushTimer = 0; nextBandY = 40; lastNote = Math.floor(rand() * 5);
   spine = { x: W / 2, y: FLOOR_Y - 12, note: -1, nextY: FLOOR_Y - 12 - 120 };
   maxM = 0; echoCount = 0; notesSung = 0; chordsSung = 0; prevSingCount = 0;
-  hushStarted = false; exposure = 0; coachTarget = null;
+  hushStarted = false; exposure = 0; coachTarget = null; coach = null;
+  echoLead = 0; callouts = []; explained = new Set(); slowT = 0;
   playTime = 0; song = []; shake = 0; stratumIdx = 0; bannerT = 0; dieT = 0; overT = 0; cleanupT = 0;
   for (let i = 0; i < 5; i++) { tethers[i] = null; inRange[i] = null; }
   genUpTo(camY - 600);
@@ -519,6 +524,38 @@ function emit(x, y, n, o) {
 }
 function say(x, y, text, c) { texts.push({ x, y, text, c: c || [240, 236, 255], life: 0, max: 1.6 }); }
 
+// The first time a shard, moth or echo comes into view, point at it and say what
+// it does. Dangers also slow time for a moment. Each is explained in the player's
+// first few runs that meet it, then the game trusts them to remember.
+const CALLOUTS = {
+  shard: { title: 'Red shard', lines: ['Touching it cracks your glass.', 'Three cracks and you break.'], c: [255, 112, 136], slow: true },
+  moth:  { title: 'Moth', lines: ['It follows your song and drinks your breath.', 'Go quiet and it loses interest.'], c: [214, 208, 228], slow: true },
+  echo:  { title: 'Echo', lines: ['Fly through it to refill your breath', 'and push the Hush back.'], c: [255, 220, 140], slow: false },
+};
+const CALLOUT_RUNS = 3;
+const CALLOUT_T = 4.5;
+let seenRuns = {};
+try { seenRuns = JSON.parse(localStorage.getItem('hollowsong.seen') || '{}') || {}; } catch (e) { seenRuns = {}; }
+
+function updateCallouts(dt) {
+  for (const co of callouts) co.t += dt;
+  callouts = callouts.filter(co => co.t < CALLOUT_T && co.obj.alive !== false);
+  if (callouts.length || bannerT > 0) return; // one at a time, and never over a stratum banner
+  const top = camY + 130, bottom = camY + H - 170;
+  const inView = o => o.y > top && o.y < bottom && o.x > vx0 + 20 && o.x < vx1 - 20;
+  for (const [kind, list] of [['shard', shards], ['moth', moths], ['echo', echoes]]) {
+    if (explained.has(kind) || (seenRuns[kind] || 0) >= CALLOUT_RUNS) continue;
+    const obj = list.find(o => o.alive !== false && inView(o));
+    if (!obj) continue;
+    explained.add(kind);
+    callouts.push({ kind, obj, t: 0 });
+    if (CALLOUTS[kind].slow) slowT = 1.6;
+    seenRuns[kind] = (seenRuns[kind] || 0) + 1;
+    try { localStorage.setItem('hollowsong.seen', JSON.stringify(seenRuns)); } catch (e) { /* storage unavailable */ }
+    return;
+  }
+}
+
 // ------------------------------------------------------------------- voices
 function syncVoices(sing) {
   for (let i = 0; i < 5; i++) {
@@ -614,14 +651,16 @@ function update(dt) {
     }
   }
   coachTarget = maxM < COACH_M ? pickCoach() : null;
+  coach = coachAdvice();
 
   // forces
   let ax = 0, ay = GRAV * lerp(1, 0.82, ease), nT = 0;
   const pull = P.muffled > 0 ? 0.5 : 1;
+  const aim = lerp(TETHER_AIM_FULL, TETHER_AIM, ease);
   for (let i = 0; i < 5; i++) {
     const c = tethers[i];
     if (!c) continue;
-    const dx = c.x - P.x, dy = c.y - P.y, d = Math.hypot(dx, dy) || 1;
+    const dx = c.x - P.x, dy = c.y - aim - P.y, d = Math.hypot(dx, dy) || 1;
     const F = Math.min(1900, 11 * Math.max(0, d - 30)) * pull;
     ax += dx / d * F; ay += dy / d * F; nT++;
     c.charge -= CRYSTAL_WEAR * lerp(1, 0.45, ease) * dt;
@@ -680,7 +719,9 @@ function update(dt) {
     if (Math.hypot(P.x - e.x, P.y - ey) < 26) {
       e.alive = false; echoCount++;
       P.breath = Math.min(100, P.breath + 30);
-      silenceY += 90;
+      // push the Hush down and give it room to stay there, or the lead clamp below would undo it
+      silenceY += ECHO_PUSH;
+      echoLead = Math.min(echoLead + ECHO_PUSH, ECHO_PUSH * 3);
       AudioE.sparkle([0, 2, 4, 7].map(k => noteFreq(0) * 2 * Math.pow(2, k / 12)));
       emit(e.x, ey, 20, { c: [255, 220, 140], speed: 160, life: 0.9, size: 2.5 });
       say(e.x, ey - 24, 'echo · the Hush falls back', [255, 220, 140]);
@@ -719,7 +760,8 @@ function update(dt) {
     say(P.x, P.y - 40, 'the Hush stirs below you', [255, 140, 160]);
   }
   if (hushStarted) silenceY -= S.hush * lerp(1, 0.45, ease) * (1 + Math.min(0.5, playTime / 600)) * dt;
-  silenceY = Math.min(silenceY, P.y + lerp(HUSH_LEAD, 1000, ease));
+  echoLead = Math.max(0, echoLead - ECHO_FADE * dt);
+  silenceY = Math.min(silenceY, P.y + lerp(HUSH_LEAD, 1000, ease) + echoLead);
   for (const c of crystals) if (c.alive && c.y > silenceY - 6) shatterCrystal(c, true);
   const gap = silenceY - P.y;
   AudioE.setHush(clamp(1 - (gap - 30) / 420, 0, 1));
@@ -742,6 +784,7 @@ function update(dt) {
     moths = moths.filter(m => m.y < silenceY + 40);
   }
   for (const c of crystals) c.ring = Math.max(0, c.ring - dt * 2);
+  updateCallouts(dt);
   updateCamera(dt);
 }
 
@@ -815,6 +858,7 @@ function draw() {
   for (const m of moths) if (m.y > wy0 - 40 && m.y < wy1 + 40) drawMoth(m);
   drawParticles();
   drawTexts();
+  if (state === 'play' || state === 'paused') drawCallouts();
   drawHush(wy1);
   ctx.restore();
 
@@ -1042,7 +1086,7 @@ function drawTethers() {
 }
 
 function drawCoach() {
-  const c = coachTarget;
+  const c = coach && coach.target;
   if (state !== 'play' || !c || !c.alive || tethers[c.note] === c) return;
   const n = NOTES[c.note];
   const pulse = 0.5 + 0.5 * Math.sin(time * 6);
@@ -1066,18 +1110,27 @@ function drawCoach() {
   ctx.fillText(label, bx, by + 1);
 }
 
-// What a new player should do right now, in plain words.
-function coachMessage() {
+// What a new player should do right now: the words to show, the notes to hold,
+// and the crystal to point at. It teaches the handoff: catch the next crystal
+// before letting go of the one you're on.
+function coachAdvice() {
   if (maxM >= COACH_M || P.winded) return null;
-  let on = null;
-  for (let i = 0; i < 5; i++) if (tethers[i]) on = tethers[i];
-  if (on) {
-    if (P.vy < -60 && P.y < on.y + 30) return 'Let go now. Your momentum will carry you up.';
-    return 'Swing up toward it, then let go as you pass it.';
+  const k = i => keyLong(noteKey(i));
+  const on = [];
+  for (let i = 0; i < 5; i++) if (tethers[i]) on.push(i);
+  const next = coachTarget;
+  if (on.length) {
+    const low = on.reduce((a, i) => tethers[i].y > tethers[a].y ? i : a);
+    if (on.length >= 2) return { text: `Now let go of ${k(low)}.`, hold: on.filter(i => i !== low), target: null };
+    if (next && !tethers[next.note] && next.y < tethers[low].y - 40) {
+      return { text: `Hold ${k(next.note)} too, then let go of ${k(low)}.`, hold: [low, next.note], target: next };
+    }
+    if (P.vy < -60 && P.y < tethers[low].y + 10) return { text: 'Let go now. Your momentum will carry you up.', hold: [], target: null };
+    return { text: 'Ride it up, and let go as you pass it.', hold: on, target: null };
   }
-  const c = coachTarget;
-  if (c) return `Hold ${keyLong(noteKey(c.note))} to rise toward the ${NOTES[c.note].name.toLowerCase()} crystal.`;
-  return 'Nothing above is in reach. Let yourself drift until a crystal lights up.';
+  if (P.vy < -250 && P.breath < 80) return { text: "You're flying. Stay quiet to catch your breath.", hold: [], target: null };
+  if (next) return { text: `Hold ${k(next.note)} to rise toward the ${NOTES[next.note].name.toLowerCase()} crystal.`, hold: [next.note], target: next };
+  return { text: 'Nothing above is in reach. Let yourself drift until a crystal lights up.', hold: [], target: null };
 }
 
 function drawPlayer() {
@@ -1153,6 +1206,39 @@ function drawTexts() {
     const a = Math.min(1, (t.max - t.life) / 0.5) * Math.min(1, t.life / 0.15);
     ctx.fillStyle = rgba(t.c, a);
     ctx.fillText(t.text, t.x, t.y);
+  }
+}
+
+function drawCallouts() {
+  for (const co of callouts) {
+    const d = CALLOUTS[co.kind], o = co.obj;
+    const a = Math.min(1, co.t / 0.25) * Math.min(1, (CALLOUT_T - co.t) / 0.6);
+    const oy = co.kind === 'echo' ? o.y + Math.sin(o.phase * 1.7) * 6 : o.y;
+    const r = 32 + 3 * Math.sin(time * 6);
+    ctx.strokeStyle = rgba(d.c, 0.85 * a); ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(o.x, oy, r, 0, Math.PI * 2); ctx.stroke();
+
+    // label box beside the ring, on the side with more room, kept clear of the HUD
+    ctx.font = `italic 17px ${DISPLAY}`;
+    const w = Math.max(...d.lines.map(t => ctx.measureText(t).width)) + 28, h = 30 + d.lines.length * 22;
+    const side = o.x < (vx0 + vx1) / 2 ? 1 : -1;
+    const bx = clamp(side > 0 ? o.x + r + 18 : o.x - r - 18 - w, vx0 + 12, vx1 - 12 - w);
+    const by = clamp(oy - h / 2, camY + 130, camY + H - 170 - h);
+    ctx.strokeStyle = rgba(d.c, 0.5 * a); ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(o.x + side * r, oy); ctx.lineTo(side > 0 ? bx : bx + w, by + h / 2); ctx.stroke();
+    ctx.beginPath();
+    if (ctx.roundRect) ctx.roundRect(bx, by, w, h, 6); else ctx.rect(bx, by, w, h);
+    ctx.fillStyle = `rgba(10,8,20,${0.82 * a})`; ctx.fill();
+    ctx.strokeStyle = rgba(d.c, 0.7 * a); ctx.stroke();
+
+    ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+    ctx.font = `11px ${MONO}`; setSpacing(2.2);
+    ctx.fillStyle = rgba(d.c, a);
+    ctx.fillText(d.title.toUpperCase(), bx + 14, by + 22);
+    setSpacing(0);
+    ctx.font = `italic 17px ${DISPLAY}`;
+    ctx.fillStyle = `rgba(242,238,255,${a})`;
+    d.lines.forEach((t, k) => ctx.fillText(t, bx + 14, by + 46 + k * 22));
   }
 }
 
@@ -1240,7 +1326,7 @@ function drawHUD(pal) {
     if (ctx.roundRect) ctx.roundRect(x, y, TW, TH, 5); else ctx.rect(x, y, TW, TH);
     ctx.fillStyle = 'rgba(10,8,20,0.62)'; ctx.fill();
     if (pressed) { ctx.fillStyle = rgba(n.rgb, tethered ? 0.32 : 0.12); ctx.fill(); }
-    const coached = coachTarget && coachTarget.note === i && !tethered;
+    const coached = coach && coach.target && coach.target.note === i && !tethered;
     ctx.strokeStyle = rgba(n.rgb, tethered || coached ? 1 : avail ? 0.75 : 0.22);
     ctx.lineWidth = tethered ? 2 : coached ? 2 + 1.5 * (0.5 + 0.5 * Math.sin(time * 6)) : 1.2; ctx.stroke();
     ctx.save(); ctx.translate(x + TW / 2, y + 27); ctx.scale(9, 9);
@@ -1265,7 +1351,7 @@ function drawHUD(pal) {
   if (!P.winded) ctx.fillText(`THE HUSH · ${Math.max(0, gapM).toFixed(0)} M BELOW`, W / 2, TY - 14);
   setSpacing(0);
 
-  const tip = state === 'play' ? coachMessage() : null;
+  const tip = state === 'play' && coach && exposure <= 0 ? coach.text : null;
   if (tip) {
     ctx.font = `italic 22px ${DISPLAY}`;
     ctx.fillStyle = `rgba(240,236,255,${0.75 + 0.2 * Math.sin(time * 3)})`;
@@ -1288,6 +1374,11 @@ function drawHUD(pal) {
     ctx.fillStyle = `rgba(246,242,255,${a})`;
     ctx.fillText(STRATA[stratumIdx].name, W / 2, H * 0.3);
     setSpacing(0);
+    if (STRATA[stratumIdx].warn) {
+      ctx.font = `italic 20px ${DISPLAY}`;
+      ctx.fillStyle = `rgba(255,140,160,${a * 0.95})`;
+      ctx.fillText(STRATA[stratumIdx].warn, W / 2, H * 0.3 + 38);
+    }
   }
 }
 
@@ -1459,9 +1550,9 @@ function showOver() {
     ? 'The Hush reached you, and your song went quiet.'
     : 'Your glass gave way.';
   const tips = [
-    'Let go of a note while you are still rising past its crystal. Your momentum keeps you climbing.',
+    'Hold the next note before you let go of the one you are on. That handoff is how you climb without falling.',
+    'Let go as you rise past a crystal. Your momentum keeps you climbing while your breath refills.',
     'Find the next crystal before the one you are on cracks. Its key shows up beside it.',
-    'Hold two notes to hang between two crystals, then let go of the lower one.',
     'Falling is fine. You have time to catch another crystal before the Hush reaches you.',
     'Watch the ring around your glass. When it runs low, go quiet for a moment to refill it.',
   ];
@@ -1666,8 +1757,11 @@ function frame(now) {
   if (state !== 'paused') time += dt;
 
   if (state === 'play') {
-    const n = Math.max(1, Math.ceil(dt * 120));
-    for (let k = 0; k < n && state === 'play'; k++) update(dt / n);
+    // a callout about a danger slows time to 40% for a moment, then eases back
+    const sdt = dt * (1 - 0.6 * clamp(slowT / 0.4, 0, 1));
+    slowT = Math.max(0, slowT - dt);
+    const n = Math.max(1, Math.ceil(sdt * 120));
+    for (let k = 0; k < n && state === 'play'; k++) update(sdt / n);
   } else if (state === 'dying') {
     dieT += dt;
     updateCamera(dt);
@@ -1686,7 +1780,8 @@ function frame(now) {
 }
 
 if (location.hash === '#debug') {
-  window.__hollowsong = () => ({ state, P, crystals, inRange: inRange.slice(), silenceY, maxM, deathCause, playTime, held: held.slice(), layoutId });
+  window.__hollowsong = () => ({ state, P, crystals, inRange: inRange.slice(), silenceY, maxM, deathCause, playTime, held: held.slice(), layoutId,
+    coach: coach && { text: coach.text, hold: coach.hold.slice() }, echoLead, callouts: callouts.map(c => c.kind) });
   window.__hollowsongStep = () => frame(performance.now());
   // Generates a fresh cave up to `top` (world y) and returns its crystals, for layout analysis.
   window.__hollowsongWorld = top => { reset(); genUpTo(top); return crystals.map(c => ({ x: c.x, y: c.y, note: c.note, spine: !!c.spine })); };

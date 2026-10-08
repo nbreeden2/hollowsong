@@ -36,10 +36,12 @@ The number keys `1`–`5` play the five notes in every layout. The tiles, crysta
 - **Breath.** Each held note spends breath. When you're quiet your breath refills, but you fall. If you run out, you can't sing until you've recovered about a third of your breath.
 - **Wear.** A crystal cracks while you're tethered to it, and shatters after about five seconds.
 - **The Hush.** It rises from below and silences any crystal it reaches. It waits until you've climbed a few metres (or 20 seconds pass) before it starts rising. If it swallows you, you have a moment to sing your way back out before the run ends. It never falls more than 26 m behind you, or 50 m near the start.
-- **Gentle start.** The first 250 m ease you in: the Hush is slower, falls are slower, swings settle faster, crystals last about twice as long and singing costs less breath. All of this tapers off to full difficulty by 250 m. For the first 60 m a coach marks the crystal to aim for and tells you which key to hold and when to let go.
+- **Handoff.** Start singing the next crystal above before you let go of the one you're on. Then go quiet while your momentum carries you up, so your breath refills.
+- **Gentle start.** The first 250 m ease you in: the Hush is slower, falls are slower, swings settle faster, crystals last about twice as long and singing costs less breath. A note also lifts you up past its crystal, so you can let go and coast. All of this tapers off to full difficulty by 250 m, where a single note only pulls you up to just below its crystal. For the first 60 m a coach marks the crystal to aim for and tells you which keys to hold and when to let go, teaching the handoff.
+- **First sightings.** The first time a shard, moth or echo comes into view, the game points at it and says what it does. Shards and moths also slow time for a moment. This happens in your first three runs that meet each one. Each stratum's banner names its new danger.
 - **Shards** (red, jagged) crack your glass. Three cracks and you shatter.
 - **Moths** (pale, from the third stratum) chase any song within reach and drink your breath while they're touching you. Go quiet and they lose interest.
-- **Echoes** (gold) refill 30% of your breath and push the Hush back 4.5 m.
+- **Echoes** (gold) refill 30% of your breath and push the Hush back 4.5 m. The extra room fades over about 7 seconds, and collecting several echoes stacks it, up to 13.5 m.
 
 ## Strata
 
