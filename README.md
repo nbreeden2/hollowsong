@@ -46,6 +46,16 @@ The note tiles along the bottom of the screen show which notes are in reach. Onc
 - **Moths** (pale, from the third stratum) chase any song within reach and drink your breath while they're touching you. Go quiet and they lose interest.
 - **Echoes** (gold) refill 30% of your breath and push the Hush back 4.5 m. The extra room fades over about 7 seconds, and collecting several echoes stacks it, up to 13.5 m.
 
+## Two hands (advanced)
+
+Choose **Two hands** on the title screen. You get nine notes that rise from left to right like a piano: your left hand's four fingers sing Amber, Moss, Tide and Iris, either thumb on the space bar sings Ash, and your right hand's four fingers sing Amber to Iris an octave higher. High crystals have the same colour and shape as their low twins, drawn a little smaller with a small ^ mark above them. Holding notes from both hands together makes a harmony, which costs 25% less breath (a ring shows around your glass while you hold one). Ash on the thumbs harmonises with either hand. The cave has an extra crystal in every band so each note has something to reach for.
+
+| Layout | `A` | `S` | `D` | `F` | `Space` | `J` | `K` | `L` | `;` |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Home row (default) | Amber | Moss | Tide | Iris | Ash | Amber ^ | Moss ^ | Tide ^ | Iris ^ |
+
+**Custom** lets you bind any nine keys, from the lowest note to the highest. Number keys `1`–`9` play the nine notes in order. On a gamepad the d-pad (left, up, right, down) plays the left hand's notes, either bumper plays Ash, and A B X Y play the right hand's notes. On a touch screen the bottom of the screen splits into nine columns. Two hands work in both Climb and Practice and keep their own best height.
+
 ## Practice
 
 Choose **Practice** on the title screen and pick a stratum to start in. There is no Hush: you start on a rock ledge at the bottom of that stratum, and if you fall you land back on it. Shards still crack your glass, so a practice run ends if you shatter. To end it yourself, pause (`P` or `Esc`) and choose **End practice** to see your song, or **Title screen** to go straight back. Practice runs don't count toward your best height. All five strata are open from the start, so you can learn the shards and moths before you reach them in a real climb.
@@ -70,7 +80,8 @@ The live game reports anonymous events to GoatCounter (https://hollowsong.goatco
 | --- | --- |
 | `start/first`, `start/again` | A run begins (first run of the visit, or a retry) |
 | `start/practice/s<stratum>` | A practice run begins in that stratum |
-| `practice/s<stratum>/<cause>/<climbed>/<duration>` | A practice run ends. Cause is `shatter` or `quit`. Climbed is how far above the starting ledge you got, as a range. |
+| `practice/s<stratum>/<cause>/<climbed>/<layout>/<duration>` | A practice run ends. Cause is `shatter` or `quit`. Climbed is how far above the starting ledge you got, as a range. |
+| `hands/1`, `hands/2` | Someone switches between one and two hands on the title screen |
 | `run/<cause>/s<stratum>/<height>/<layout>/<input>/<duration>` | A run ends. Cause is `hush`, `shatter` or `quit` (tab closed mid-run). Height and duration are ranges, for example `100-149m` and `1-2min`. Input is `keyboard`, `gamepad`, `mouse`, `touch`, `mixed` or `none`. |
 | `listen` | Someone plays back their song |
 | `layout/<id>` | Someone picks a keyboard layout on the title screen |

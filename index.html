@@ -65,7 +65,7 @@
   .lede { margin: 0; font-family: var(--body); font-size: 1.12rem; line-height: 1.55; color: var(--mist); max-width: 33rem; }
   .lede em { color: var(--ink); }
 
-  .keys { list-style: none; display: flex; flex-wrap: wrap; gap: 0.5rem; margin: 0.2rem 0; padding: 0; }
+  .keys { list-style: none; display: grid; grid-template-columns: repeat(5, 3.7rem); gap: 0.5rem; margin: 0.2rem 0; padding: 0; } /* two hands: low row, then high */
   .keys li {
     display: grid; justify-items: center; gap: 0.2rem;
     width: 3.7rem; padding: 0.55rem 0.2rem 0.45rem;
@@ -73,6 +73,11 @@
     border-radius: 5px; background: var(--tile);
   }
   .keys svg { width: 1.7rem; height: 1.7rem; overflow: visible; }
+  /* two hands: one row in keyboard order, 4 | thumbs | 4 */
+  .keys.nine { grid-template-columns: repeat(4, minmax(0, 2.5rem)) minmax(0, 5rem) repeat(4, minmax(0, 2.5rem)); gap: 0.3rem; }
+  .keys.nine li { width: auto; }
+  .keys.nine span { font-size: 0.5rem; letter-spacing: 0.06em; }
+  .keys.nine kbd { font-size: 0.72rem; }
   .keys kbd { font-family: var(--mono); font-size: 0.82rem; color: var(--ink); }
   .keys span { font-family: var(--mono); font-size: 0.58rem; letter-spacing: 0.14em; text-transform: uppercase; color: var(--c); }
 
@@ -136,15 +141,21 @@
       <div class="actions">
         <button class="cta" id="btnBegin" type="button">Begin <kbd>Enter</kbd></button>
       </div>
-      <p class="fine">Number keys 1–5 work in every layout · Gamepad A B X Y RB · Mouse or touch: the five tiles at the bottom<br>Enter start · P pause · M mute · Best climb: <span id="bestTitle">none yet</span><br>Anonymous play stats (height reached, run length, layout) are counted with GoatCounter. No cookies, nothing personal.</p>
+      <p class="fine">Number keys work in every layout: 1–5, or 1–9 with two hands · Gamepad A B X Y RB (two hands: d-pad, either bumper, A B X Y) · Mouse or touch: the tiles at the bottom<br>Enter start · P pause · M mute · Best climb: <span id="bestTitle">none yet</span><br>Anonymous play stats (height reached, run length, layout) are counted with GoatCounter. No cookies, nothing personal.</p>
     </div>
     <div class="setup">
       <div class="layout" id="layoutPicker">
+        <div class="seg" role="group" aria-label="Hands" id="handsPicker">
+          <button type="button" data-hands="1" aria-pressed="true">One hand</button>
+          <button type="button" data-hands="2" aria-pressed="false">Two hands · advanced</button>
+        </div>
         <div class="seg" role="group" aria-label="Keyboard layout">
           <button type="button" data-layout="left" aria-pressed="true">Left hand</button>
           <button type="button" data-layout="right" aria-pressed="false">Right hand</button>
           <button type="button" data-layout="classic" aria-pressed="false">Classic</button>
           <button type="button" data-layout="custom" aria-pressed="false">Custom</button>
+          <button type="button" data-layout="home2" aria-pressed="false" hidden>Home row</button>
+          <button type="button" data-layout="custom2" aria-pressed="false" hidden>Custom</button>
         </div>
         <ul class="keys" id="keyChips"></ul>
         <div class="layout-row">
@@ -174,7 +185,8 @@
         <dt>Breath</dt><dd>Singing spends breath. Going quiet refills it, but you start to fall.</dd>
         <dt>Wear</dt><dd>A crystal cracks while you lean on it, and soon shatters. Keep moving.</dd>
         <dt>Danger</dt><dd>Red shards crack your glass; three cracks and you break. Pale moths follow any song and drink your breath. Go quiet to lose them.</dd>
-        <dt>Echoes</dt><dd>Gold echoes refill your breath and push the Hush back down.</dd>
+        <dt>Two hands</dt><dd>An advanced mode with nine notes that rise from left to right: four for your left hand, Ash on the space bar for either thumb, and four for your right hand an octave up (marked ^). Notes from both hands held together make a harmony, which costs less breath.</dd>
+      <dt>Echoes</dt><dd>Gold echoes refill your breath and push the Hush back down.</dd>
       </dl>
     </section>
   </div>

@@ -41,14 +41,28 @@ const mixRgb = (a, b, t) => [lerp(a[0], b[0], t), lerp(a[1], b[1], t), lerp(a[2]
 
 // Five notes of a pentatonic scale. Each has a colour and a crystal silhouette,
 // so the game reads without relying on colour alone.
-const NOTES = [
+const ONE_HAND = [
   { key: 'A', name: 'Ash',   deg: 0, color: '#ff8a6e', shape: 'spire' },
   { key: 'S', name: 'Amber', deg: 2, color: '#ffc75e', shape: 'lozenge' },
   { key: 'D', name: 'Moss',  deg: 4, color: '#86e8a0', shape: 'bloom' },
   { key: 'F', name: 'Tide',  deg: 7, color: '#62d2ff', shape: 'prism' },
   { key: 'G', name: 'Iris',  deg: 9, color: '#c9a2ff', shape: 'star' },
 ];
-NOTES.forEach(n => { n.rgb = hexRgb(n.color); });
+ONE_HAND.forEach(n => { n.rgb = hexRgb(n.color); });
+// Two hands: nine notes rising left to right like a piano. The left hand's four
+// fingers sing Amber to Iris, either thumb on the space bar sings Ash, and the
+// right hand's four fingers sing Amber to Iris an octave up. High crystals share
+// their note's colour and shape, drawn a little smaller with a mark above.
+const TWO_HANDS = [
+  ...ONE_HAND.slice(1),
+  { ...ONE_HAND[0], deg: 12, mid: true },
+  ...ONE_HAND.slice(1).map(n => ({ ...n, name: `High ${n.name}`, short: n.name, deg: n.deg + 12, high: true })),
+];
+let NOTES = ONE_HAND, NN = 5; // notes in play: 5 with one hand, 9 with two
+function useHands(two) { NOTES = two ? TWO_HANDS : ONE_HAND; NN = NOTES.length; }
+try { if (localStorage.getItem('hollowsong.hands') === '2') useHands(true); } catch (e) { /* storage unavailable */ }
+// which side of the keyboard a note belongs to with two hands: -1 left, 0 thumbs, 1 right
+const side = i => NN === 5 ? 0 : NOTES[i].mid ? 0 : NOTES[i].high ? 1 : -1;
 
 // Keyboard layouts. Each lists the key for notes 1→5. The two one-hand layouts
 // follow piano fingering: the left thumb plays the top note, the right thumb the
@@ -58,11 +72,18 @@ const LAYOUTS = {
   right:   { name: 'Right hand', keys: ['Space', 'KeyJ', 'KeyK', 'KeyL', 'Semicolon'], extra: { Quote: 4 }, note: "Thumb on the space bar, fingers rest on J K L ;. The ' key also plays the fifth note." },
   classic: { name: 'Classic',    keys: ['KeyA', 'KeyS', 'KeyD', 'KeyF', 'KeyG'],      extra: {},           note: 'The original five keys, one finger each.' },
   custom:  { name: 'Custom',     keys: null,                                           extra: {},           note: 'Your own five keys, for one hand or two.' },
+  // two hands: fingers on the home row, both thumbs share the space bar
+  home2:   { name: 'Home row', hands: 2, keys: ['KeyA', 'KeyS', 'KeyD', 'KeyF', 'Space', 'KeyJ', 'KeyK', 'KeyL', 'Semicolon'], extra: {},
+             note: 'Fingers on A S D F and J K L ;, either thumb on the space bar. The notes rise from left to right. Number keys 1–9 work too.' },
+  custom2: { name: 'Custom',   hands: 2, keys: null, extra: {}, note: 'Your own nine keys, from the lowest note to the highest.' },
 };
-// Number keys always work, whatever the layout.
+const handsOf = id => LAYOUTS[id].hands || 1;
+const customId = () => NN > 5 ? 'custom2' : 'custom';
+const defaultLayout = () => NN > 5 ? 'home2' : 'left';
+// Number keys always work, whatever the layout (6–9 only with two hands).
 const ALWAYS_KEYS = {
-  Digit1: 0, Digit2: 1, Digit3: 2, Digit4: 3, Digit5: 4,
-  Numpad1: 0, Numpad2: 1, Numpad3: 2, Numpad4: 3, Numpad5: 4,
+  Digit1: 0, Digit2: 1, Digit3: 2, Digit4: 3, Digit5: 4, Digit6: 5, Digit7: 6, Digit8: 7, Digit9: 8, Digit0: 9,
+  Numpad1: 0, Numpad2: 1, Numpad3: 2, Numpad4: 3, Numpad5: 4, Numpad6: 5, Numpad7: 6, Numpad8: 7, Numpad9: 8, Numpad0: 9,
 };
 // Keys that run the game itself and can't be bound to notes.
 const RESERVED = new Set(['Escape', 'Enter', 'NumpadEnter', 'Tab', 'KeyP', 'KeyM', 'KeyR', ...Object.keys(ALWAYS_KEYS)]);
@@ -89,6 +110,7 @@ function keyShort(code) {
 function keyLong(code) { return CODE_LABELS[code] ? CODE_LABELS[code][1] : keyShort(code); }
 const noteKey = i => LAYOUTS[layoutId].keys[i];
 const PAD_NOTES = [0, 1, 2, 3, 5]; // A B X Y RB
+const PAD_TWO = [14, 12, 15, 13, -1, 0, 1, 2, 3]; // two hands: d-pad left, up, right, down | either bumper | A B X Y
 
 const SHAPES = (() => {
   const pent = [];
@@ -337,7 +359,8 @@ function makeGlow(rgb) {
   g.fillStyle = gr; g.fillRect(0, 0, 128, 128);
   return c;
 }
-const GLOW = NOTES.map(n => makeGlow(n.rgb));
+const glows = {};
+for (const n of [...ONE_HAND, ...TWO_HANDS]) n.glow = glows[n.color] || (glows[n.color] = makeGlow(n.rgb));
 const GLOW_RED = makeGlow([255, 60, 90]);
 const GLOW_GOLD = makeGlow([255, 220, 140]);
 const GLOW_PALE = makeGlow([200, 196, 220]);
@@ -356,7 +379,15 @@ const rollCv = $('roll');
 
 let dpr = 1, scale = 1, ox = 0, oy = 0, vx0 = 0, vx1 = W, vy0 = 0, vy1 = H;
 // The note tiles: one compact row along the bottom edge of the window.
-const TW = 64, TH = 40, TG = 10, TX0 = (W - (5 * TW + 4 * TG)) / 2;
+const TW = 64, TH = 40, TG = 10, TGROUP = 22; // with two hands, a wider gap splits low from high
+// with two hands the thumbs' Ash tile is wide, like the space bar it sits on
+const tileW = i => NN > 5 && NOTES[i].mid ? 2 * TW : TW;
+function tileX(i) {
+  let total = (NN - 1) * TG + (NN > 5 ? 2 * TGROUP : 0), x = 0;
+  for (let k = 0; k < NN; k++) total += tileW(k);
+  for (let k = 0; k < i; k++) x += tileW(k) + TG;
+  return (W - total) / 2 + x + (side(i) + 1) * (NN > 5 ? TGROUP : 0);
+}
 let TY = H - TH - 14;
 function resize() {
   dpr = Math.min(2, window.devicePixelRatio || 1);
@@ -373,19 +404,28 @@ window.addEventListener('resize', resize);
 resize();
 
 // Key chips on the title screen, drawn from the same shapes as the crystals.
-(function buildChips() {
+let chipKeys = [], chipItems = [];
+function buildChips() {
   const ul = $('keyChips');
+  ul.innerHTML = '';
+  ul.classList.toggle('nine', NN > 5);
   for (const n of NOTES) {
     const pts = SHAPES[n.shape].map(poly => `<polygon points="${poly.map(p => p.join(',')).join(' ')}" fill="${n.color}" fill-opacity="0.85" stroke="#fff" stroke-opacity="0.6" stroke-width="0.08"/>`).join('');
     const li = document.createElement('li');
     li.style.setProperty('--c', n.color);
-    li.innerHTML = `<svg viewBox="-1.7 -1.7 3.4 3.4" aria-hidden="true">${pts}</svg><kbd></kbd><span>${n.name}</span>`;
+    const mark = n.high ? '<polyline points="-0.5,-1.3 0,-1.62 0.5,-1.3" fill="none" stroke="#fff" stroke-width="0.14" stroke-linejoin="round"/>' : '';
+    li.innerHTML = `<svg viewBox="-1.7 -1.7 3.4 3.4" aria-hidden="true">${pts}${mark}</svg><kbd></kbd><span>${n.high ? n.short : n.name}</span>`;
     ul.appendChild(li);
   }
-})();
+  chipKeys = [...ul.querySelectorAll('kbd')];
+  chipItems = [...ul.querySelectorAll('li')];
+}
+buildChips();
 
 let bestM = 0;
-try { bestM = Number(localStorage.getItem('hollowsong.best')) || 0; } catch (e) { bestM = 0; }
+const bestKey = () => NN > 5 ? 'hollowsong.best2' : 'hollowsong.best'; // two hands keep their own best
+function loadBest() { try { bestM = Number(localStorage.getItem(bestKey())) || 0; } catch (e) { bestM = 0; } }
+loadBest();
 function showBest() { $('bestTitle').textContent = bestM > 0 ? `${Math.floor(bestM)} m` : 'none yet'; }
 showBest();
 
@@ -400,12 +440,12 @@ let camY, silenceY, hushTimer, nextBandY, lastNote, maxM, echoCount, notesSung, 
 let playTime, song, deathCause, shake, stratumIdx, bannerT, dieT, overT, cleanupT, prevSingCount;
 let hushStarted, exposure, coachTarget, coach, camAnchor, spine, echoLead, callouts, explained, slowT;
 let time = 0;
-const keyHeld = [false, false, false, false, false];
-const padHeld = [false, false, false, false, false];
-const held = [false, false, false, false, false];
-const voices = [null, null, null, null, null];
-const tethers = [null, null, null, null, null];
-const inRange = [null, null, null, null, null];
+const keyHeld = Array(10).fill(false);
+const padHeld = Array(10).fill(false);
+const held = Array(10).fill(false);
+const voices = Array(10).fill(null);
+const tethers = Array(10).fill(null);
+const inRange = Array(10).fill(null);
 const ptrNotes = new Map();
 
 const heightM = y => (FLOOR_Y - 12 - y) / PX_PER_M;
@@ -431,13 +471,13 @@ function reset() {
   camAnchor = CAM_CLIMB;
   camY = P.y - camScreenY();
   silenceY = practice ? floorY + 5000 : FLOOR_Y + 600;
-  hushTimer = 0; nextBandY = floorY - 120; lastNote = Math.floor(rand() * 5);
+  hushTimer = 0; nextBandY = floorY - 120; lastNote = Math.floor(rand() * NN);
   spine = { x: W / 2, y: floorY - 12, note: -1, nextY: floorY - 12 - 120 };
   maxM = startM; echoCount = 0; notesSung = 0; chordsSung = 0; prevSingCount = 0;
   hushStarted = false; exposure = 0; coachTarget = null; coach = null;
   echoLead = 0; callouts = []; explained = new Set(); slowT = 0;
   playTime = 0; song = []; shake = 0; stratumIdx = stratumAt(startM); bannerT = 0; dieT = 0; overT = 0; cleanupT = 0;
-  for (let i = 0; i < 5; i++) { tethers[i] = null; inRange[i] = null; }
+  for (let i = 0; i < NN; i++) { tethers[i] = null; inRange[i] = null; }
   genUpTo(camY - 600);
 }
 
@@ -449,7 +489,7 @@ function makeCrystal(x, y, note) {
     const sx = (rand() - 0.5) * 0.5, sy = (rand() - 0.5) * 0.8;
     cracks.push([sx, sy, sx + Math.cos(a) * l, sy + Math.sin(a) * l]);
   }
-  return { x, y, note, size: 15 + rand() * 7, rot: (rand() - 0.5) * 0.5, charge: 1, alive: true, ring: 0, phase: rand() * 6.28, cracks };
+  return { x, y, note, size: (15 + rand() * 7) * (NOTES[note].high ? 0.85 : 1), rot: (rand() - 0.5) * 0.5, charge: 1, alive: true, ring: 0, phase: rand() * 6.28, cracks };
 }
 function tooClose(x, y, d) {
   for (let k = crystals.length - 1, n = 0; k >= 0 && n < 14; k--, n++) {
@@ -470,7 +510,7 @@ function genBand(yb) {
   const S = STRATA[stratumAt(m)];
   const bandH = S.band;
   const early = yb > -320;
-  const n = m < 150 || rand() < S.pair ? 2 : 1;
+  const n = (m < 150 || rand() < S.pair ? 2 : 1) + (NN > 5 ? 1 : 0); // ten notes need more crystals to choose from
   // The spine: a chain of crystals, each within reach of the one below it (even
   // hanging beneath it) and never sharing its note, so there is always a way up.
   let placed = 0;
@@ -479,7 +519,7 @@ function genBand(yb) {
     const [L, R] = walls(y);
     const x = clamp(spine.x + (rand() - 0.5) * 340, L + 55, R - 55);
     let note;
-    do { note = Math.floor(rand() * 5); } while (note === spine.note || note === lastNote);
+    do { note = Math.floor(rand() * NN); } while (note === spine.note || note === lastNote);
     lastNote = note;
     crystals.push(Object.assign(makeCrystal(x, y, note), { spine: true }));
     spine = { x, y, note, nextY: y - (110 + rand() * 80) };
@@ -490,7 +530,7 @@ function genBand(yb) {
       let [x, y] = spotIn(yb, bandH, 55);
       if (early) x = W / 2 + (rand() - 0.5) * 340;
       if (tooClose(x, y, 95)) continue;
-      const note = (lastNote + 1 + Math.floor(rand() * 4)) % 5;
+      const note = (lastNote + 1 + Math.floor(rand() * (NN - 1))) % NN;
       lastNote = note;
       crystals.push(makeCrystal(x, y, note));
       break;
@@ -569,7 +609,7 @@ function updateCallouts(dt) {
 
 // ------------------------------------------------------------------- voices
 function syncVoices(sing) {
-  for (let i = 0; i < 5; i++) {
+  for (let i = 0; i < NN; i++) {
     if (sing[i] && !voices[i]) {
       const f = noteFreq(i);
       voices[i] = AudioE.voice(f);
@@ -582,7 +622,7 @@ function syncVoices(sing) {
     }
   }
 }
-const NONE = [false, false, false, false, false];
+const NONE = Array(10).fill(false);
 function silenceVoices() { syncVoices(NONE); }
 
 // ------------------------------------------------------------------- update
@@ -590,8 +630,8 @@ function silenceVoices() { syncVoices(NONE); }
 // the nearest one below if none above is in reach. Preferring crystals above stops
 // a nearby crystal underneath from hiding a higher one of the same note.
 function findInRange() {
-  const best = [Infinity, Infinity, Infinity, Infinity, Infinity];
-  for (let i = 0; i < 5; i++) inRange[i] = null;
+  const best = NOTES.map(() => Infinity);
+  for (let i = 0; i < NN; i++) inRange[i] = null;
   for (const c of crystals) {
     if (!c.alive) continue;
     const dy = c.y - P.y;
@@ -606,7 +646,7 @@ function findInRange() {
 // The crystal a new player should aim for: the highest one in reach above them.
 function pickCoach() {
   let best = null;
-  for (let i = 0; i < 5; i++) {
+  for (let i = 0; i < NN; i++) {
     const c = inRange[i];
     if (c && c.y < P.y - 40 && c.charge > 0.2 && (!best || c.y < best.y)) best = c;
   }
@@ -615,7 +655,7 @@ function pickCoach() {
 
 function shatterCrystal(c, quiet) {
   c.alive = false; c.charge = 0;
-  for (let i = 0; i < 5; i++) if (tethers[i] === c) tethers[i] = null;
+  for (let i = 0; i < NN; i++) if (tethers[i] === c) tethers[i] = null;
   if (quiet) return;
   AudioE.shatter(noteFreq(c.note));
   emit(c.x, c.y, 22, { c: NOTES[c.note].rgb, speed: 220, life: 1.1, size: 4, g: 420, type: 'glass' });
@@ -629,14 +669,19 @@ function update(dt) {
   const ease = clamp(1 - maxM / EASE_M, 0, 1);
 
   // breath
-  const sing = [false, false, false, false, false];
+  const sing = NOTES.map(() => false);
   let nSing = 0;
-  for (let i = 0; i < 5; i++) { held[i] = keyHeld[i] || padHeld[i] || [...ptrNotes.values()].includes(i); sing[i] = held[i] && !P.winded; if (sing[i]) nSing++; }
+  for (let i = 0; i < NN; i++) { held[i] = keyHeld[i] || padHeld[i] || [...ptrNotes.values()].includes(i); sing[i] = held[i] && !P.winded; if (sing[i]) nSing++; }
+  // harmony: notes from both hands together cost less breath
+  // (Ash on the thumbs harmonises with either hand)
+  const sides = new Set();
+  for (let i = 0; i < NN; i++) if (sing[i]) sides.add(side(i));
+  P.harmony = NN > 5 && sides.size >= 2;
   if (nSing > 0) {
-    P.breath -= BREATH_COST * lerp(1, 0.6, ease) * nSing * dt;
+    P.breath -= BREATH_COST * lerp(1, 0.6, ease) * nSing * (P.harmony ? 0.75 : 1) * dt;
     if (P.breath <= 0) {
       P.breath = 0; P.winded = true; nSing = 0;
-      for (let i = 0; i < 5; i++) sing[i] = false;
+      for (let i = 0; i < NN; i++) sing[i] = false;
       AudioE.gasp();
       say(P.x, P.y - 30, 'out of breath', [255, 140, 150]);
     }
@@ -650,7 +695,7 @@ function update(dt) {
 
   // tethers
   findInRange();
-  for (let i = 0; i < 5; i++) {
+  for (let i = 0; i < NN; i++) {
     const c = sing[i] ? inRange[i] : null;
     if (c !== tethers[i]) {
       if (c) {
@@ -668,7 +713,7 @@ function update(dt) {
   let ax = 0, ay = GRAV * lerp(1, 0.82, ease), nT = 0;
   const pull = P.muffled > 0 ? 0.5 : 1;
   const aim = lerp(TETHER_AIM_FULL, TETHER_AIM, ease);
-  for (let i = 0; i < 5; i++) {
+  for (let i = 0; i < NN; i++) {
     const c = tethers[i];
     if (!c) continue;
     const dx = c.x - P.x, dy = c.y - aim - P.y, d = Math.hypot(dx, dy) || 1;
@@ -701,7 +746,7 @@ function update(dt) {
     stratumIdx = st;
     bannerT = 4.5;
     AudioE.setDrone(STRATA[st].root, 0.12);
-    for (let i = 0; i < 5; i++) if (voices[i]) voices[i].setFreq(noteFreq(i));
+    for (let i = 0; i < NN; i++) if (voices[i]) voices[i].setFreq(noteFreq(i));
     AudioE.sparkle([0, 2, 4].map(k => noteFreq(k) * 2));
   }
 
@@ -836,7 +881,7 @@ function die(cause) {
   if (state !== 'play') return;
   state = 'dying'; dieT = 0; deathCause = cause;
   silenceVoices();
-  for (let i = 0; i < 5; i++) tethers[i] = null;
+  for (let i = 0; i < NN; i++) tethers[i] = null;
   if (cause === 'hush') {
     AudioE.hushDeath();
     emit(P.x, P.y, 30, { c: [200, 196, 220], speed: 90, life: 1.6, size: 2, type: 'dust' });
@@ -851,7 +896,7 @@ function die(cause) {
 function saveBest() {
   if (practice || maxM <= bestM) return;
   bestM = maxM;
-  try { localStorage.setItem('hollowsong.best', String(Math.floor(bestM))); } catch (e) { /* storage unavailable */ }
+  try { localStorage.setItem(bestKey(), String(Math.floor(bestM))); } catch (e) { /* storage unavailable */ }
   showBest();
 }
 
@@ -994,7 +1039,7 @@ function drawCrystal(c) {
   ctx.globalCompositeOperation = 'lighter';
   ctx.globalAlpha = clamp(0.22 + 0.4 * b + c.ring * 0.6 + pulse, 0, 1);
   const gs = c.size * (tethered ? 7 : 5.5);
-  ctx.drawImage(GLOW[c.note], c.x - gs / 2, c.y - gs / 2, gs, gs);
+  ctx.drawImage(n.glow, c.x - gs / 2, c.y - gs / 2, gs, gs);
   ctx.globalAlpha = 1;
   ctx.globalCompositeOperation = 'source-over';
 
@@ -1018,6 +1063,7 @@ function drawCrystal(c) {
   }
   ctx.restore();
 
+  if (n.high) highMark(c.x, c.y - c.size * 1.95, 6, 0.4 + 0.5 * b);
   if (near && !tethered) {
     ctx.strokeStyle = rgba(n.rgb, 0.35);
     ctx.lineWidth = 1;
@@ -1039,6 +1085,12 @@ function drawCrystal(c) {
     ctx.lineWidth = 2;
     ctx.beginPath(); ctx.arc(c.x, c.y, c.size * 2.1, -Math.PI / 2, -Math.PI / 2 + Math.PI * 2 * c.charge); ctx.stroke();
   }
+}
+
+// The mark above a high-octave crystal or tile: a small upward chevron.
+function highMark(x, y, r, a) {
+  ctx.strokeStyle = `rgba(255,255,255,${a})`; ctx.lineWidth = 1.6; ctx.lineJoin = 'round';
+  ctx.beginPath(); ctx.moveTo(x - r, y + r * 0.5); ctx.lineTo(x, y - r * 0.5); ctx.lineTo(x + r, y + r * 0.5); ctx.stroke();
 }
 
 function drawShard(s) {
@@ -1099,7 +1151,7 @@ function drawMoth(m) {
 
 function drawTethers() {
   ctx.globalCompositeOperation = 'lighter';
-  for (let i = 0; i < 5; i++) {
+  for (let i = 0; i < NN; i++) {
     const c = tethers[i];
     if (!c) continue;
     const dx = c.x - P.x, dy = c.y - P.y, d = Math.hypot(dx, dy) || 1;
@@ -1151,7 +1203,7 @@ function coachAdvice() {
   if (maxM >= COACH_M || P.winded) return null;
   const k = i => keyLong(noteKey(i));
   const on = [];
-  for (let i = 0; i < 5; i++) if (tethers[i]) on.push(i);
+  for (let i = 0; i < NN; i++) if (tethers[i]) on.push(i);
   const next = coachTarget;
   if (on.length) {
     const low = on.reduce((a, i) => tethers[i].y > tethers[a].y ? i : a);
@@ -1170,7 +1222,7 @@ function coachAdvice() {
 function drawPlayer() {
   // inner light takes the colour of whatever you are singing
   let col = [210, 222, 255], n = 0, acc = [0, 0, 0];
-  for (let i = 0; i < 5; i++) if (voices[i]) { acc[0] += NOTES[i].rgb[0]; acc[1] += NOTES[i].rgb[1]; acc[2] += NOTES[i].rgb[2]; n++; }
+  for (let i = 0; i < NN; i++) if (voices[i]) { acc[0] += NOTES[i].rgb[0]; acc[1] += NOTES[i].rgb[1]; acc[2] += NOTES[i].rgb[2]; n++; }
   if (n) col = [acc[0] / n, acc[1] / n, acc[2] / n];
   P.glow = mixRgb(P.glow, col, 0.2);
   if (P.inv > 0 && Math.floor(P.inv * 14) % 2 === 0) return;
@@ -1201,6 +1253,10 @@ function drawPlayer() {
     ctx.stroke();
   }
 
+  if (state === 'play' && P.harmony) {
+    ctx.strokeStyle = `rgba(255,236,200,${0.35 + 0.25 * Math.sin(time * 5)})`; ctx.lineWidth = 1.2;
+    ctx.beginPath(); ctx.arc(x, y, r + 15, 0, Math.PI * 2); ctx.stroke();
+  }
   if (state === 'play' && (P.breath < 99.5 || n)) {
     const frac = P.breath / 100;
     let c = 'rgba(240,236,255,0.6)';
@@ -1362,11 +1418,11 @@ function drawHUD(pal) {
   // the five notes
   setSpacing(0);
   const base = hudBase();
-  if (tilesShown()) for (let i = 0; i < 5; i++) {
-    const n = NOTES[i], x = TX0 + i * (TW + TG), y = TY;
+  if (tilesShown()) for (let i = 0; i < NN; i++) {
+    const n = NOTES[i], x = tileX(i), y = TY, tw = tileW(i);
     const pressed = held[i] && !P.winded, tethered = !!tethers[i], avail = !!inRange[i];
     ctx.beginPath();
-    if (ctx.roundRect) ctx.roundRect(x, y, TW, TH, 5); else ctx.rect(x, y, TW, TH);
+    if (ctx.roundRect) ctx.roundRect(x, y, tw, TH, 5); else ctx.rect(x, y, tw, TH);
     ctx.fillStyle = 'rgba(10,8,20,0.62)'; ctx.fill();
     if (pressed) { ctx.fillStyle = rgba(n.rgb, tethered ? 0.32 : 0.12); ctx.fill(); }
     const coached = coach && coach.target && coach.target.note === i && !tethered;
@@ -1376,10 +1432,11 @@ function drawHUD(pal) {
     shapePath(ctx, n.shape);
     ctx.fillStyle = rgba(n.rgb, avail || pressed ? 0.95 : 0.3); ctx.fill();
     ctx.restore();
+    if (n.high) highMark(x + 18, y + 7, 4, avail || pressed ? 0.9 : 0.35);
     const key = keyShort(noteKey(i));
     ctx.font = `${key.length > 2 ? 10 : 16}px ${MONO}`; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
     ctx.fillStyle = `rgba(255,255,255,${avail ? 0.92 : 0.4})`;
-    ctx.fillText(key, x + 44, y + TH / 2 + 1);
+    ctx.fillText(key, x + 18 + tw / 2, y + TH / 2 + 1);
   }
   ctx.textBaseline = 'alphabetic';
   if (P.winded) {
@@ -1433,7 +1490,7 @@ function drawHUD(pal) {
 let rollData = null, playback = null;
 function buildSong() {
   let acc = 0, prev = null;
-  const open = [null, null, null, null, null];
+  const open = NOTES.map(() => null);
   let notes = [];
   for (const e of song) {
     if (prev !== null) { const gap = e.t - prev; acc += gap > 1.0 ? 0.45 : gap; }
@@ -1452,7 +1509,7 @@ function buildSong() {
     total = 150;
   }
   for (const n of notes) if (n.e - n.s < 0.08) n.e = n.s + 0.08;
-  return { notes, total };
+  return { notes, total, rows: NN };
 }
 
 function drawRoll(playT) {
@@ -1463,8 +1520,8 @@ function drawRoll(playT) {
   const g = rollCv.getContext('2d');
   g.setTransform(d, 0, 0, d, 0, 0);
   g.clearRect(0, 0, w, h);
-  const rowH = h / 5;
-  for (let i = 0; i < 5; i++) { g.fillStyle = rgba(NOTES[i].rgb, 0.05); g.fillRect(0, (4 - i) * rowH + 1, w, rowH - 2); }
+  const rows = rollData ? rollData.rows : NN, rowH = h / rows;
+  for (let i = 0; i < rows; i++) { g.fillStyle = rgba(NOTES[i].rgb, NOTES[i].high ? 0.08 : 0.05); g.fillRect(0, (rows - 1 - i) * rowH + 1, w, rowH - 2); }
   if (!rollData || !rollData.notes.length) {
     g.fillStyle = 'rgba(200,195,225,0.7)'; g.font = `italic 15px ${DISPLAY}`; g.textBaseline = 'middle';
     g.fillText('You never sang a note.', 12, h / 2);
@@ -1474,7 +1531,7 @@ function drawRoll(playT) {
   for (const n of rollData.notes) {
     const lit = playT == null || n.s <= playT;
     g.fillStyle = rgba(NOTES[n.i].rgb, lit ? 0.92 : 0.3);
-    g.fillRect(4 + n.s * k, (4 - n.i) * rowH + rowH * 0.24, Math.max(2, (n.e - n.s) * k), rowH * 0.52);
+    g.fillRect(4 + n.s * k, (rows - 1 - n.i) * rowH + rowH * 0.24, Math.max(2, (n.e - n.s) * k), rowH * 0.52);
   }
   if (playT != null) { g.fillStyle = 'rgba(255,255,255,0.85)'; g.fillRect(4 + playT * k, 0, 1.5, h); }
 }
@@ -1544,7 +1601,7 @@ function reportRun(cause) {
   const secs = playTime;
   const dur = secs < 15 ? 'under-15s' : secs < 30 ? '15-30s' : secs < 60 ? '30-60s' : secs < 120 ? '1-2min' : secs < 300 ? '2-5min' : '5min+';
   const input = inputsUsed.size === 0 ? 'none' : inputsUsed.size > 1 ? 'mixed' : [...inputsUsed][0];
-  if (practice) track(`practice/s${practiceStratum + 1}/${cause}/${bucket(Math.floor(maxM - STRATA[practiceStratum].at), [0, 10, 30, 60, 100, 150, 220, 300, 400, 520], 'm')}/${dur}`);
+  if (practice) track(`practice/s${practiceStratum + 1}/${cause}/${bucket(Math.floor(maxM - STRATA[practiceStratum].at), [0, 10, 30, 60, 100, 150, 220, 300, 400, 520], 'm')}/${layoutId}/${dur}`);
   else track(`run/${cause}/s${stratumIdx + 1}/${height}/${layoutId}/${input}/${dur}`);
 }
 window.addEventListener('pagehide', () => { if (state === 'play' || state === 'paused' || state === 'dying') reportRun(state === 'dying' ? deathCause : 'quit'); });
@@ -1554,7 +1611,7 @@ function begin() {
   if (state !== 'title') return;
   if (binding >= 0) { // e.g. a gamepad Start press mid-binding: drop the unfinished binding
     binding = -1;
-    applyLayout(LAYOUTS.custom.keys ? 'custom' : 'left');
+    applyLayout(LAYOUTS[customId()].keys ? customId() : defaultLayout());
   }
   AudioE.init();
   titleEl.hidden = true;
@@ -1637,6 +1694,7 @@ function showOver() {
   $('statBest').textContent = Math.floor(bestM);
   showBest();
   rollData = buildSong();
+  rollCv.style.height = rollData.rows > 5 ? '168px' : ''; // ten rows need more room
   overEl.hidden = false;
   drawRoll(null);
   $('btnAgain').focus({ preventScroll: true });
@@ -1687,10 +1745,12 @@ function pointerNote(e) {
   const x = (e.clientX - ox) / scale, y = (e.clientY - oy) / scale;
   if (e.pointerType === 'touch') {
     if (y < vy0 + (vy1 - vy0) * 0.6) return -1;
-    return clamp(Math.floor((x - vx0) / (vx1 - vx0) * 5), 0, 4);
+    return clamp(Math.floor((x - vx0) / (vx1 - vx0) * NN), 0, NN - 1);
   }
-  if (y < TY - 30 || y > TY + TH + 20 || x < TX0 - 20 || x > TX0 + 5 * TW + 4 * TG + 20) return -1;
-  return clamp(Math.floor((x - TX0 + TG / 2) / (TW + TG)), 0, 4);
+  if (y < TY - 30 || y > TY + TH + 20) return -1;
+  let best = -1, bd = TW / 2 + TG + 20;
+  for (let i = 0; i < NN; i++) { const d = Math.abs(x - tileX(i) - tileW(i) / 2) - (tileW(i) - TW) / 2; if (d < bd) { bd = d; best = i; } }
+  return best;
 }
 cv.addEventListener('pointerdown', e => {
   if (state !== 'play') return;
@@ -1717,18 +1777,18 @@ titleEl.addEventListener('click', e => {
 
 // ------------------------------------------------------------ layout picker
 let binding = -1, bindDraft = [], bindError = '';
-const chipKeys = [...document.querySelectorAll('#keyChips kbd')];
-const chipItems = [...document.querySelectorAll('#keyChips li')];
 
+const layoutStore = () => NN > 5 ? 'hollowsong.layout2' : 'hollowsong.layout';
 function applyLayout(id) {
-  if (!LAYOUTS[id] || !LAYOUTS[id].keys) id = 'left';
+  if (!LAYOUTS[id] || !LAYOUTS[id].keys || handsOf(id) !== (NN > 5 ? 2 : 1)) id = defaultLayout();
   layoutId = id;
   const L = LAYOUTS[id];
-  KEYMAP = { ...ALWAYS_KEYS };
+  KEYMAP = {};
+  for (const [code, i] of Object.entries(ALWAYS_KEYS)) if (i < NN) KEYMAP[code] = i;
   L.keys.forEach((code, i) => { KEYMAP[code] = i; });
   for (const [code, i] of Object.entries(L.extra)) if (!(code in KEYMAP)) KEYMAP[code] = i;
   keyHeld.fill(false);
-  try { localStorage.setItem('hollowsong.layout', id); } catch (e) { /* storage unavailable */ }
+  try { localStorage.setItem(layoutStore(), id); } catch (e) { /* storage unavailable */ }
   renderPicker();
 }
 function startBinding() {
@@ -1738,7 +1798,7 @@ function startBinding() {
 function bindKey(code) {
   if (code === 'Escape') {
     binding = -1;
-    if (!LAYOUTS.custom.keys) { applyLayout('left'); return; }
+    if (!LAYOUTS[customId()].keys) { applyLayout(defaultLayout()); return; }
     renderPicker();
     return;
   }
@@ -1747,17 +1807,19 @@ function bindKey(code) {
   bindError = '';
   bindDraft.push(code);
   binding++;
-  if (binding < 5) { renderPicker(); return; }
+  if (binding < NN) { renderPicker(); return; }
   binding = -1;
-  LAYOUTS.custom.keys = bindDraft.slice();
-  try { localStorage.setItem('hollowsong.custom', JSON.stringify(bindDraft)); } catch (e) { /* storage unavailable */ }
-  applyLayout('custom');
+  LAYOUTS[customId()].keys = bindDraft.slice();
+  try { localStorage.setItem(`hollowsong.${customId()}`, JSON.stringify(bindDraft)); } catch (e) { /* storage unavailable */ }
+  applyLayout(customId());
 }
 function renderPicker() {
   const L = LAYOUTS[layoutId];
   for (const b of document.querySelectorAll('#layoutPicker [data-layout]')) {
     b.setAttribute('aria-pressed', String(b.dataset.layout === layoutId));
+    b.hidden = handsOf(b.dataset.layout) !== (NN > 5 ? 2 : 1);
   }
+  for (const b of document.querySelectorAll('#handsPicker [data-hands]')) b.setAttribute('aria-pressed', String(b.dataset.hands === (NN > 5 ? '2' : '1')));
   chipKeys.forEach((k, i) => {
     const code = binding >= 0 ? bindDraft[i] : L.keys && L.keys[i];
     k.textContent = code ? keyShort(code) : '?';
@@ -1765,20 +1827,20 @@ function renderPicker() {
   });
   const note = $('layoutNote');
   if (binding >= 0) {
-    note.textContent = bindError || `Press the key you want for ${NOTES[binding].name}, note ${binding + 1} of 5. Esc cancels.`;
+    note.textContent = bindError || `Press the key you want for ${NOTES[binding].name}, note ${binding + 1} of ${NN}. Esc cancels.`;
     note.classList.toggle('warn', !!bindError);
   } else {
     note.textContent = L.note;
     note.classList.remove('warn');
   }
-  $('btnBind').hidden = layoutId !== 'custom' || binding >= 0;
+  $('btnBind').hidden = layoutId !== customId() || binding >= 0;
 }
 for (const b of document.querySelectorAll('#layoutPicker [data-layout]')) {
   b.addEventListener('click', () => {
     binding = -1;
     const id = b.dataset.layout;
     track(`layout/${id}`);
-    if (id === 'custom' && !LAYOUTS.custom.keys) { layoutId = 'custom'; startBinding(); return; }
+    if (id === customId() && !LAYOUTS[id].keys) { layoutId = id; startBinding(); return; }
     applyLayout(id);
   });
 }
@@ -1795,13 +1857,32 @@ $('btnTiles').addEventListener('click', () => {
 });
 renderTiles();
 
-try {
-  const saved = JSON.parse(localStorage.getItem('hollowsong.custom') || 'null');
-  if (Array.isArray(saved) && saved.length === 5 && saved.every(c => typeof c === 'string' && !RESERVED.has(c)) && new Set(saved).size === 5) LAYOUTS.custom.keys = saved;
-} catch (e) { /* storage unavailable */ }
-let savedLayout = 'left';
-try { savedLayout = localStorage.getItem('hollowsong.layout') || 'left'; } catch (e) { /* storage unavailable */ }
-applyLayout(savedLayout);
+for (const [id, n] of [['custom', 5], ['custom2', 9]]) {
+  try {
+    const saved = JSON.parse(localStorage.getItem(`hollowsong.${id}`) || 'null');
+    if (Array.isArray(saved) && saved.length === n && saved.every(c => typeof c === 'string' && !RESERVED.has(c)) && new Set(saved).size === n) LAYOUTS[id].keys = saved;
+  } catch (e) { /* storage unavailable */ }
+}
+function loadLayout() {
+  let saved = defaultLayout();
+  try { saved = localStorage.getItem(layoutStore()) || saved; } catch (e) { /* storage unavailable */ }
+  applyLayout(saved);
+}
+loadLayout();
+
+// One hand or two. Switching rebuilds the cave (two hands have ten kinds of crystal).
+function setHands(two) {
+  if ((NN > 5) === two) return;
+  useHands(two);
+  binding = -1;
+  buildChips();
+  try { localStorage.setItem('hollowsong.hands', two ? '2' : '1'); } catch (e) { /* storage unavailable */ }
+  track(`hands/${two ? 2 : 1}`);
+  loadLayout();
+  loadBest(); showBest();
+  reset();
+}
+for (const b of document.querySelectorAll('#handsPicker [data-hands]')) b.addEventListener('click', () => setHands(b.dataset.hands === '2'));
 if (navigator.keyboard && navigator.keyboard.getLayoutMap) {
   navigator.keyboard.getLayoutMap().then(m => { layoutMap = m; renderPicker(); }).catch(() => {});
 }
@@ -1855,9 +1936,10 @@ function pollPad() {
   for (const p of pads) if (p && p.connected) { gp = p; break; }
   if (!gp) return;
   const down = b => !!(gp.buttons[b] && gp.buttons[b].pressed);
-  PAD_NOTES.forEach((b, i) => { padHeld[i] = down(b); });
-  if (PAD_NOTES.some(down) || down(4)) noteInput('gamepad');
-  if (down(4)) padHeld[4] = true; // LB doubles for the fifth note
+  const map = NN > 5 ? PAD_TWO : PAD_NOTES;
+  map.forEach((b, i) => { padHeld[i] = b < 0 ? down(4) || down(5) : down(b); }); // -1: either bumper
+  if (map.some(down) || down(4) || down(5)) noteInput('gamepad');
+  if (NN === 5 && down(4)) padHeld[4] = true; // with one hand, LB doubles for the fifth note
   const now = { start: down(9), a: down(0), y: down(3), any: padHeld.some(Boolean) };
   if (now.start && !padPrev.start) {
     if (state === 'title') begin();
@@ -1895,7 +1977,7 @@ function frame(now) {
     silenceY -= 20 * dt;
     if (playback) drawRoll(AudioE.now() - playback.t0);
   } else if (state === 'title') {
-    for (let i = 0; i < 5; i++) held[i] = false;
+    for (let i = 0; i < NN; i++) held[i] = false;
   }
   if (state !== 'paused') updateEffects(dt);
   draw();
