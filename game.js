@@ -513,11 +513,19 @@ function buildChips() {
 }
 buildChips();
 
-let bestM = 0;
+let bestM = 0, bestSpeed = 100;
 const bestKey = () => NN > 5 ? 'hollowsong.best2' : 'hollowsong.best'; // two hands keep their own best
-function loadBest() { try { bestM = Number(localStorage.getItem(bestKey())) || 0; } catch (e) { bestM = 0; } }
+function loadBest() {
+  try { bestM = Number(localStorage.getItem(bestKey())) || 0; } catch (e) { bestM = 0; }
+  try { bestSpeed = Number(localStorage.getItem(bestKey() + '.speed')) || 100; } catch (e) { bestSpeed = 100; }
+}
+// Game speed, as a percentage: slower gives more time to find each note. It scales
+// the whole simulation, so the climb stays fair; sound keeps its pitch.
+let speedPct = 100;
+try { speedPct = clamp(Math.round((Number(localStorage.getItem('hollowsong.speed')) || 100) / 10) * 10, 50, 150); } catch (e) { /* storage unavailable */ }
+const speedNote = pct => pct === 100 ? '' : ` at ${pct}%`;
 loadBest();
-function showBest() { $('bestTitle').textContent = bestM > 0 ? `${Math.floor(bestM)} m` : 'none yet'; }
+function showBest() { $('bestTitle').textContent = bestM > 0 ? `${Math.floor(bestM)} m${speedNote(bestSpeed)}` : 'none yet'; }
 showBest();
 
 // ------------------------------------------------------------------- state
@@ -1050,8 +1058,11 @@ function die(cause) {
 }
 function saveBest() {
   if (practice || maxM <= bestM) return;
-  bestM = maxM;
-  try { localStorage.setItem(bestKey(), String(Math.floor(bestM))); } catch (e) { /* storage unavailable */ }
+  bestM = maxM; bestSpeed = speedPct;
+  try {
+    localStorage.setItem(bestKey(), String(Math.floor(bestM)));
+    localStorage.setItem(bestKey() + '.speed', String(bestSpeed));
+  } catch (e) { /* storage unavailable */ }
   showBest();
 }
 
@@ -1579,7 +1590,7 @@ function drawHUD(pal) {
   ctx.fillStyle = rgba(pal.edge, 0.95);
   ctx.fillText(STRATA[stratumIdx].name.toUpperCase(), hx + 2, hy + 92);
   ctx.fillStyle = 'rgba(200,195,225,0.6)';
-  ctx.fillText(`PEAK ${Math.floor(maxM)} M · BEST ${Math.floor(practice ? bestM : Math.max(bestM, maxM))} M`, hx + 2, hy + 110);
+  ctx.fillText(`PEAK ${Math.floor(maxM)} M · BEST ${Math.floor(practice ? bestM : Math.max(bestM, maxM))} M${speedPct !== 100 ? ` · SPEED ${speedPct}%` : ''}`, hx + 2, hy + 110);
 
   ctx.textAlign = 'right';
   ctx.fillStyle = 'rgba(200,195,225,0.6)';
@@ -1790,8 +1801,9 @@ function reportRun(cause) {
   const secs = playTime;
   const dur = secs < 15 ? 'under-15s' : secs < 30 ? '15-30s' : secs < 60 ? '30-60s' : secs < 120 ? '1-2min' : secs < 300 ? '2-5min' : '5min+';
   const input = inputsUsed.size === 0 ? 'none' : inputsUsed.size > 1 ? 'mixed' : [...inputsUsed][0];
-  if (practice) track(`practice/s${practiceStratum + 1}/${cause}/${bucket(Math.floor(maxM - STRATA[practiceStratum].at), [0, 10, 30, 60, 100, 150, 220, 300, 400, 520], 'm')}/${layoutId}/${dur}`);
-  else track(`run/${cause}/s${stratumIdx + 1}/${height}/${layoutId}/${input}/${dur}`);
+  const sp = speedPct === 100 ? '' : `/speed${speedPct}`;
+  if (practice) track(`practice/s${practiceStratum + 1}/${cause}/${bucket(Math.floor(maxM - STRATA[practiceStratum].at), [0, 10, 30, 60, 100, 150, 220, 300, 400, 520], 'm')}/${layoutId}/${dur}${sp}`);
+  else track(`run/${cause}/s${stratumIdx + 1}/${height}/${layoutId}/${input}/${dur}${sp}`);
 }
 window.addEventListener('pagehide', () => { if (state === 'play' || state === 'paused' || state === 'dying') reportRun(state === 'dying' ? deathCause : 'quit'); });
 
@@ -1883,7 +1895,8 @@ function showOver() {
   $('statEchoes').textContent = echoCount;
   $('statNotes').textContent = notesSung;
   $('statChords').textContent = chordsSung;
-  $('statBest').textContent = Math.floor(bestM);
+  $('statBest').textContent = `${Math.floor(bestM)}${speedNote(bestSpeed)}`;
+  $('overUnit').textContent = `metres${speedNote(speedPct)}`;
   showBest();
   rollData = buildSong();
   rollCv.style.height = rollData.rows > 5 ? '168px' : ''; // nine rows need more room
@@ -2049,6 +2062,22 @@ $('btnTiles').addEventListener('click', () => {
 });
 renderTiles();
 
+function renderSpeed() {
+  $('speed').value = speedPct;
+  $('speedOut').textContent = speedPct === 100 ? 'Normal' : `${speedPct}%`;
+  $('btnSpeedReset').hidden = speedPct === 100;
+}
+function setSpeed(pct, report) {
+  speedPct = pct;
+  try { localStorage.setItem('hollowsong.speed', String(pct)); } catch (e) { /* storage unavailable */ }
+  if (report) track(`speed/${pct}`);
+  renderSpeed();
+}
+$('speed').addEventListener('input', () => setSpeed(Number($('speed').value), false));
+$('speed').addEventListener('change', () => setSpeed(Number($('speed').value), true));
+$('btnSpeedReset').addEventListener('click', () => setSpeed(100, true));
+renderSpeed();
+
 for (const [id, n] of [['custom', 5], ['custom2', 9]]) {
   try {
     const saved = JSON.parse(localStorage.getItem(`hollowsong.${id}`) || 'null');
@@ -2155,7 +2184,7 @@ function frame(now) {
 
   if (state === 'play') {
     // a callout about a danger slows time to 40% for a moment, then eases back
-    const sdt = dt * (1 - 0.6 * clamp(slowT / 0.4, 0, 1));
+    const sdt = dt * speedPct / 100 * (1 - 0.6 * clamp(slowT / 0.4, 0, 1));
     slowT = Math.max(0, slowT - dt);
     const n = Math.max(1, Math.ceil(sdt * 120));
     for (let k = 0; k < n && state === 'play'; k++) update(sdt / n);
@@ -2171,7 +2200,7 @@ function frame(now) {
   } else if (state === 'title') {
     for (let i = 0; i < NN; i++) held[i] = false;
   }
-  if (state !== 'paused') updateEffects(dt);
+  if (state !== 'paused') updateEffects(state === 'play' ? dt * speedPct / 100 : dt);
   draw();
   requestAnimationFrame(frame);
 }

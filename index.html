@@ -95,6 +95,11 @@
   .layout-row { display: flex; flex-wrap: wrap; gap: 0.6rem 1rem; align-items: center; }
   .layout-note { margin: 0; flex: 1 1 16rem; min-width: 0; font-family: var(--body); font-style: italic; font-size: 0.95rem; color: var(--mist); }
   .layout-note.warn { color: var(--hush); }
+  .layout > .layout-note { flex: none; }
+  .speed-row { margin-top: 0.4rem; }
+  .speed-label { font-family: var(--mono); font-size: 0.72rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--ink); white-space: nowrap; }
+  .speed-label output { display: inline-block; min-width: 4.2em; color: var(--amber); }
+  #speed { flex: 1 1 10rem; min-width: 8rem; max-width: 16rem; accent-color: var(--ink); }
   button.cta.small { padding: 0.45rem 0.8rem; font-size: 0.7rem; }
   .rules { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 0.5rem 1.1rem; margin: 0; font-family: var(--body); font-size: 0.98rem; line-height: 1.45; }
   .rules dt { font-family: var(--mono); font-size: 0.66rem; letter-spacing: 0.2em; text-transform: uppercase; color: var(--amber); padding-top: 0.28rem; }
@@ -174,6 +179,13 @@
         </div>
         <div class="seg" id="stratumPicker" role="group" aria-label="Where practice starts" hidden></div>
         <p class="layout-note" id="modeNote" aria-live="polite"></p>
+        <div class="layout-row speed-row">
+          <label for="speed" class="speed-label">Speed <output id="speedOut" for="speed">Normal</output></label>
+          <input type="range" id="speed" min="50" max="150" step="10" value="100" list="speedTicks">
+          <datalist id="speedTicks"><option value="50"></option><option value="100"></option><option value="150"></option></datalist>
+          <button type="button" class="cta ghost small" id="btnSpeedReset" hidden>Normal</button>
+          <p class="layout-note">Slower gives you more time to find each note. Everything slows together, so the climb stays fair; the music keeps its pitch.</p>
+        </div>
       </div>
     </div>
     <section class="howto" aria-labelledby="howtoHeading">
@@ -207,7 +219,7 @@
 <section id="over" class="screen" aria-labelledby="overHeading" hidden>
   <div class="sheet">
     <p class="eyebrow" id="overStratum">The Root Choir</p>
-    <h2 id="overHeading"><span id="overHeight">0</span> <small>metres</small></h2>
+    <h2 id="overHeading"><span id="overHeight">0</span> <small id="overUnit">metres</small></h2>
     <p class="cause" id="overCause">The Hush reached you.</p>
     <p class="tip" id="overTip" hidden></p>
     <dl class="stats">

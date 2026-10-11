@@ -83,6 +83,8 @@ How to check changes: the bot harness from the Round 2 report (`#debug` hooks, f
 
 ## Phase 6: Polish and accessibility
 
+- [x] **6.0 Game speed slider,** 50–150% with Normal in the middle, so players who need more time to map fingers to notes can slow the whole game. Best height shows its speed ("241 m at 70%"); GoatCounter runs carry `/speed<pct>` when not Normal. Follow-up ideas for finger mapping: bigger or always-on key labels on crystals, finger-numbered notes, a hand diagram on the tiles.
+
 - [ ] **6.1 Colour-blind check.** Notes already have distinct shapes (spire, lozenge, bloom, prism, star) and key labels. Confirm the tiles and song roll use shape too, and that the high notes in two-hands mode (same shape plus chevron) are readable. Add a mode only if there's a real gap.
 - [ ] **6.2 Breath readability.** Check the breath ring is readable at a glance when low, without watching it all the time.
 - [ ] **6.3 Portrait phones** still render everything small (the whole 960-wide design is scaled down). The 11 Oct GoatCounter read had a touch player quit at under 10 m after 30–60 s.

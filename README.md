@@ -60,6 +60,10 @@ Choose **Two hands** on the title screen. You get nine notes that rise from left
 
 Choose **Practice** on the title screen and pick a stratum to start in. There is no Hush: you start on a rock ledge at the bottom of that stratum, and if you fall you land back on it. As you climb, the ledge follows you up to stay within 300 m below your highest point, so a long fall still lands among crystals. Shattered crystals grow back after a few seconds, so the way up never closes, and if you land on the ledge with nothing in reach, a crystal wakes above you. Shards still crack your glass, so a practice run ends if you shatter. To end it yourself, pause (`P` or `Esc`) and choose **End practice** to see your song, or **Title screen** to go straight back. Practice runs don't count toward your best height. All five strata are open from the start, so you can learn the shards and moths before you reach them in a real climb.
 
+## Speed
+
+The **Speed** slider on the title screen runs the game from 50% to 150%, with Normal in the middle. Slower gives you more time to find each note while you build the link between fingers and crystals; faster is a challenge once you have it. Everything slows or speeds up together (falling, swinging, breath, wear, the Hush and moths), so the climb stays fair, and the music keeps its pitch. Your song is recorded in game time, so a slow climb plays back at its proper tempo. Your best height shows the speed it was set at, for example "241 m at 70%". The setting is remembered and applies to Climb and Practice.
+
 ## Strata
 
 | Height | Stratum | Key | New danger |
@@ -80,12 +84,13 @@ The live game reports anonymous events to GoatCounter (https://hollowsong.goatco
 | --- | --- |
 | `start/first`, `start/again` | A run begins (first run of the visit, or a retry) |
 | `start/practice/s<stratum>` | A practice run begins in that stratum |
-| `practice/s<stratum>/<cause>/<climbed>/<layout>/<duration>` | A practice run ends. Cause is `shatter` or `quit`. Climbed is how far above the starting ledge you got, as a range. |
+| `practice/s<stratum>/<cause>/<climbed>/<layout>/<duration>` | A practice run ends. Cause is `shatter` or `quit`. Climbed is how far above the starting ledge you got, as a range. Ends in `/speed<pct>` when the speed isn't Normal. |
 | `hands/1`, `hands/2` | Someone switches between one and two hands on the title screen |
-| `run/<cause>/s<stratum>/<height>/<layout>/<input>/<duration>` | A run ends. Cause is `hush`, `shatter` or `quit` (tab closed mid-run). Height and duration are ranges, for example `100-149m` and `1-2min`. Input is `keyboard`, `gamepad`, `mouse`, `touch`, `mixed` or `none`. |
+| `run/<cause>/s<stratum>/<height>/<layout>/<input>/<duration>` | A run ends. Cause is `hush`, `shatter` or `quit` (tab closed mid-run). Height and duration are ranges, for example `100-149m` and `1-2min`. Input is `keyboard`, `gamepad`, `mouse`, `touch`, `mixed` or `none`. Ends in `/speed<pct>`, for example `/speed70`, when the speed isn't Normal. |
 | `listen` | Someone plays back their song |
 | `layout/<id>` | Someone picks a keyboard layout on the title screen |
 | `tiles/on`, `tiles/off` | Someone switches the note tiles on or off on the title screen |
+| `speed/<pct>` | Someone sets the game speed on the title screen (50 to 150) |
 
 ## Files
 
