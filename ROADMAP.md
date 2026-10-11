@@ -39,15 +39,16 @@ How to check changes: the bot harness from the Round 2 report (`#debug` hooks, f
 
 ## Phase 2: Difficulty, using data (do after a GoatCounter read)
 
-- [ ] **2.1 Read GoatCounter** for runs on c1406b3 and later: do deaths still cluster at 150–300 m (`run/hush/s2/...`)? How many runs reach stratum III and beyond?
+- [x] **2.1 Read GoatCounter** for runs on c1406b3 and later: do deaths still cluster at 150–300 m (`run/hush/s2/...`)? How many runs reach stratum III and beyond?
+  - 11 Oct read (all events since 30 Sept): 13 climbs, 1 practice. Every climb that got going ended in the Hush, mostly at 100–219 m (4 at 150–219 m); none reached stratum III. 3 quits under 10 m, one of them on a phone (touch). Real players struggle early, so don't make the Hush harsher yet.
 - [ ] **2.2 The Hush chase (R2 / N3)**
-  - Skilled players ride the Hush limit (`HUSH_LEAD`, 26 m) instead of racing its speed. Loosen it after the easy opening (e.g. 520 → 900 px) so the per-stratum Hush speeds matter.
-  - Add a "the Hush is gaining" cue when the gap shrinks fast.
+  - [ ] Skilled players ride the Hush limit (`HUSH_LEAD`, 26 m) instead of racing its speed. Loosen it after the easy opening (e.g. 520 → 900 px) so the per-stratum Hush speeds matter. *Deferred: wait until real players reach stratum III.*
+  - [x] Add a "the Hush is gaining" cue when the gap shrinks fast: red glow from the bottom edge, low rumble, HUD reads THE HUSH IS GAINING.
   - Check: expert bot `limitPct` below 30%; some deaths from the Hush catching up, not only from falls.
-- [ ] **2.3 Moths (R3 / F5)**
-  - Introduce them gently: the first few moths in the Moth Vaults are slow.
-  - Then make deeper ones a real threat: faster per stratum (now `120 + stratumIdx * 12` px/s), or a longer muffle on contact.
-  - Clearer warning when a moth is about to drink your breath.
+- [x] **2.3 Moths (R3 / F5)**
+  - Introduce them gently: the first few moths in the Moth Vaults are slow. *Done: 100 px/s at 520 m rising to 140 by 900 m (was 144).*
+  - Then make deeper ones a real threat: faster per stratum (was `120 + stratumIdx * 12` px/s), or a longer muffle on contact. *Done: 170 px/s in IV, 200 in V; touch muffles 0.55 s in IV, 0.8 s in V (was 0.3 s). Revisit once real players get there.*
+  - Clearer warning when a moth is about to drink your breath. *Done: pulsing red ring and a wing flutter within 120 px while you sing.*
   - Check: some expert runs above 520 m lose real breath to moths; beginners still get past the first ones.
 - [ ] **2.4 Watch the eased-climb edge at 250 m.** If players still stall there, consider raising `TETHER_AIM_FULL` above 10.
 
@@ -84,7 +85,7 @@ How to check changes: the bot harness from the Round 2 report (`#debug` hooks, f
 
 - [ ] **6.1 Colour-blind check.** Notes already have distinct shapes (spire, lozenge, bloom, prism, star) and key labels. Confirm the tiles and song roll use shape too, and that the high notes in two-hands mode (same shape plus chevron) are readable. Add a mode only if there's a real gap.
 - [ ] **6.2 Breath readability.** Check the breath ring is readable at a glance when low, without watching it all the time.
-- [ ] **6.3 Portrait phones** still render everything small (the whole 960-wide design is scaled down).
+- [ ] **6.3 Portrait phones** still render everything small (the whole 960-wide design is scaled down). The 11 Oct GoatCounter read had a touch player quit at under 10 m after 30–60 s.
 
 ## Hosting and outreach
 

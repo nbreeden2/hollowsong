@@ -28,6 +28,9 @@ const FLOW_T = 2.2;         // handoffs this close together (seconds) build a fl
 const WARN_T = 1.0;         // a crystal warns this long before it shatters
 const REGROW_T = 6;         // in practice, a shattered crystal grows back after this long
 const REST_GROW_T = 1.0;    // resting on rock with nothing in reach wakes a crystal after this long
+const GAIN_GAP = 360;       // the Hush counts as gaining when it's within this many px...
+const GAIN_RATE = 70;       // ...and the gap is closing faster than this, in px per second
+const MOTH_WARN = 120;      // a moth this close to a singing player shows it's about to drink
 const BREATH_COST = 11;     // per note, per second
 const BREATH_REGEN = 28;
 const CRYSTAL_WEAR = 0.19;  // charge lost per second while tethered
@@ -390,6 +393,27 @@ const AudioE = (() => {
     for (let k = 0; k < 3; k++) api.chime(f * 4 * (1 + (k - 1) * 0.012), 0.05, t + k * 0.08);
     api.noise(0.25, 'highpass', 5000, 0.05, t);
   };
+  // The Hush gaining on you: a low swell from underneath.
+  api.rumble = () => {
+    if (!ctx) return;
+    const t = ctx.currentTime;
+    const src = ctx.createBufferSource(); src.buffer = noiseBuf; src.loop = true;
+    const fl = ctx.createBiquadFilter(); fl.type = 'lowpass'; fl.frequency.value = 160;
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t);
+    g.gain.exponentialRampToValueAtTime(0.5, t + 0.35);
+    g.gain.exponentialRampToValueAtTime(0.0001, t + 1.3);
+    src.connect(fl); fl.connect(g); g.connect(master);
+    src.start(t); src.stop(t + 1.4);
+    api.thump(70, 38, 1.1, 0.25);
+  };
+  // A moth closing in: a dry flutter of wings.
+  let flutterT = -1;
+  api.flutter = () => {
+    if (!ctx || ctx.currentTime - flutterT < 0.8) return;
+    const t = flutterT = ctx.currentTime;
+    for (let k = 0; k < 4; k++) api.noise(0.06, 'bandpass', 1400 + k * 150, 0.09, t + k * 0.055, 3);
+  };
   api.tink = () => api.chime(2400 + Math.random() * 900, 0.022);
   api.gasp = () => api.noise(0.5, 'bandpass', 800, 0.14, undefined, 2);
   api.hushDeath = () => { api.noise(2.2, 'lowpass', 300, 0.5); api.thump(90, 30, 1.5, 0.4); };
@@ -505,7 +529,7 @@ let rand, nL1, nL2, nR1, nR2;
 let P, crystals, shards, echoes, moths, particles, texts;
 let camY, silenceY, hushTimer, nextBandY, lastNote, maxM, echoCount, notesSung, chordsSung;
 let playTime, song, deathCause, shake, stratumIdx, bannerT, dieT, overT, cleanupT, prevSingCount;
-let hushStarted, exposure, coachTarget, coach, handoffs, flow, lastHandoffT, restT, camAnchor, spine, echoLead, callouts, explained, slowT;
+let hushStarted, exposure, coachTarget, coach, handoffs, flow, lastHandoffT, restT, mothDrain, gapRate, gaining, gainSoundT, camAnchor, spine, echoLead, callouts, explained, slowT;
 let time = 0;
 const keyHeld = Array(10).fill(false);
 const padHeld = Array(10).fill(false);
@@ -541,7 +565,7 @@ function reset() {
   hushTimer = 0; nextBandY = floorY - 120; lastNote = Math.floor(rand() * NN);
   spine = { x: W / 2, y: floorY - 12, note: -1, nextY: floorY - 12 - 120 };
   maxM = startM; echoCount = 0; notesSung = 0; chordsSung = 0; prevSingCount = 0;
-  hushStarted = false; exposure = 0; coachTarget = null; coach = null; handoffs = 0; flow = 0; lastHandoffT = -99; restT = 0;
+  hushStarted = false; exposure = 0; coachTarget = null; coach = null; handoffs = 0; flow = 0; lastHandoffT = -99; restT = 0; mothDrain = 0; gapRate = 0; gaining = 0; gainSoundT = 0;
   echoLead = 0; callouts = []; explained = new Set(); slowT = 0;
   playTime = 0; song = []; shake = 0; stratumIdx = stratumAt(startM); bannerT = 0; dieT = 0; overT = 0; cleanupT = 0;
   for (let i = 0; i < NN; i++) { tethers[i] = null; inRange[i] = null; }
@@ -880,14 +904,17 @@ function update(dt) {
     }
   }
 
-  // moths: drawn to song, they drink breath while touching you
+  // moths: drawn to song, they drink breath while touching you. The first ones,
+  // low in the Moth Vaults, are slow; deeper down they're quicker and their touch
+  // muffles your song for longer.
+  const deep = Math.max(0, stratumIdx - 2);
+  const mothV = 100 + 40 * clamp((maxM - STRATA[2].at) / (STRATA[3].at - STRATA[2].at), 0, 1) + 30 * deep;
   for (const m of moths) {
     m.phase += dt * 14;
     const dx = P.x - m.x, dy = P.y - m.y, d = Math.hypot(dx, dy) || 1;
     const k = Math.min(1, dt * 2.2);
     if (nSing > 0 && d < 440) {
-      const v = 120 + stratumIdx * 12;
-      m.vx += (dx / d * v - m.vx) * k; m.vy += (dy / d * v - m.vy) * k;
+      m.vx += (dx / d * mothV - m.vx) * k; m.vy += (dy / d * mothV - m.vy) * k;
     } else {
       m.wander += (Math.random() - 0.5) * dt * 4;
       m.vx += (Math.cos(m.wander) * 40 - m.vx) * dt; m.vy += (Math.sin(m.wander) * 30 - m.vy) * dt;
@@ -896,9 +923,13 @@ function update(dt) {
     const [mL, mR] = walls(m.y);
     if (m.x < mL + 20) { m.x = mL + 20; m.vx = Math.abs(m.vx); m.wander = 0; }
     if (m.x > mR - 20) { m.x = mR - 20; m.vx = -Math.abs(m.vx); m.wander = Math.PI; }
+    const close = nSing > 0 && d < MOTH_WARN;
+    if (close && !m.close) AudioE.flutter();
+    m.close = close;
     if (d < 36) {
       P.breath = Math.max(0, P.breath - 40 * dt);
-      P.muffled = 0.3;
+      mothDrain += 40 * dt;
+      P.muffled = Math.max(P.muffled, 0.3 + 0.25 * deep);
       if (Math.random() < dt * 12) emit(m.x, m.y, 1, { c: [200, 196, 220], speed: 30, life: 1, size: 1.5, type: 'dust' });
     }
   }
@@ -957,6 +988,15 @@ function updateHush(dt, S, ease) {
   silenceY = Math.min(silenceY, P.y + lerp(HUSH_LEAD, 1000, ease) + echoLead);
   for (const c of crystals) if (c.alive && c.y > silenceY - 6) shatterCrystal(c, true);
   const gap = silenceY - P.y;
+  // Is it gaining on you? Usually because you're falling toward it. Warn while there's time to catch a crystal.
+  if (hushStarted) {
+    gapRate = lerp(gapRate, (gap - (P.lastGap ?? gap)) / dt, Math.min(1, dt * 6));
+    const closing = gap < GAIN_GAP && -gapRate > GAIN_RATE;
+    gaining = clamp(gaining + (closing ? dt * 4 : -dt * 1.5), 0, 1);
+    gainSoundT = Math.max(0, gainSoundT - dt);
+    if (closing && gainSoundT <= 0) { gainSoundT = 5; AudioE.rumble(); }
+  }
+  P.lastGap = gap;
   AudioE.setHush(clamp(1 - (gap - 30) / 420, 0, 1));
   if (P.y + P.r * 0.3 > silenceY) {
     exposure += dt;
@@ -1252,6 +1292,12 @@ function drawEcho(e) {
 }
 
 function drawMoth(m) {
+  if (m.close && state === 'play') {
+    // about to drink your breath: a pulsing ring of warning around it
+    ctx.strokeStyle = `rgba(255,120,150,${0.45 + 0.35 * Math.sin(time * 14)})`;
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(m.x, m.y, 22 + 3 * Math.sin(time * 14), 0, Math.PI * 2); ctx.stroke();
+  }
   ctx.globalAlpha = 0.5;
   ctx.drawImage(GLOW_PALE, m.x - 30, m.y - 30, 60, 60);
   ctx.globalAlpha = 1;
@@ -1499,6 +1545,13 @@ function drawVignette() {
     const prox = clamp(1 - (silenceY - P.y - 30) / 420, 0, 1);
     if (prox > 0) { ctx.fillStyle = `rgba(0,0,0,${prox * 0.35})`; ctx.fillRect(vx0, vy0, vx1 - vx0, vy1 - vy0); }
     if (exposure > 0) { ctx.fillStyle = `rgba(60,0,16,${Math.min(0.45, exposure * 0.4)})`; ctx.fillRect(vx0, vy0, vx1 - vx0, vy1 - vy0); }
+    if (gaining > 0) {
+      // the Hush gaining: a red glow pulses up from the bottom edge
+      const h = (vy1 - vy0) * 0.3, a = gaining * (0.28 + 0.14 * Math.sin(time * 9));
+      const gg = ctx.createLinearGradient(0, vy1 - h, 0, vy1);
+      gg.addColorStop(0, 'rgba(255,60,100,0)'); gg.addColorStop(1, `rgba(255,60,100,${a})`);
+      ctx.fillStyle = gg; ctx.fillRect(vx0, vy1 - h, vx1 - vx0, h);
+    }
   }
 }
 
@@ -1583,6 +1636,10 @@ function drawHUD(pal) {
   ctx.font = `11px ${MONO}`; setSpacing(2.6); ctx.textAlign = 'center';
   ctx.fillStyle = `rgba(255,112,136,${0.35 + 0.6 * prox * (0.6 + 0.4 * Math.sin(time * 6))})`;
   if (practice) { ctx.fillStyle = 'rgba(200,195,225,0.55)'; if (!P.winded) ctx.fillText('PRACTICE · NO HUSH · ESC TO PAUSE OR END', W / 2, base - 14); }
+  else if (!P.winded && gaining > 0.5) {
+    ctx.fillStyle = `rgba(255,112,136,${0.75 + 0.25 * Math.sin(time * 12)})`;
+    ctx.fillText(`THE HUSH IS GAINING · ${Math.max(0, gapM).toFixed(0)} M BELOW`, W / 2, base - 14);
+  }
   else if (!P.winded) ctx.fillText(`THE HUSH · ${Math.max(0, gapM).toFixed(0)} M BELOW`, W / 2, base - 14);
   setSpacing(0);
 
@@ -2121,7 +2178,7 @@ function frame(now) {
 
 if (location.hash === '#debug') {
   window.__hollowsong = () => ({ state, P, crystals, inRange: inRange.slice(), silenceY, maxM, deathCause, playTime, held: held.slice(), layoutId,
-    coach: coach && { text: coach.text, hold: coach.hold.slice() }, echoLead, callouts: callouts.map(c => c.kind), handoffs, flow, floorY });
+    coach: coach && { text: coach.text, hold: coach.hold.slice() }, echoLead, callouts: callouts.map(c => c.kind), handoffs, flow, floorY, mothDrain, gaining });
   window.__hollowsongStep = () => frame(performance.now());
   // Generates a fresh cave up to `top` (world y) and returns its crystals, for layout analysis.
   window.__hollowsongWorld = top => { reset(); genUpTo(top); return crystals.map(c => ({ x: c.x, y: c.y, note: c.note, spine: !!c.spine })); };
