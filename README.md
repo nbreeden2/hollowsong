@@ -58,7 +58,7 @@ Choose **Two hands** on the title screen. You get nine notes that rise from left
 
 ## Practice
 
-Choose **Practice** on the title screen and pick a stratum to start in. There is no Hush: you start on a rock ledge at the bottom of that stratum, and if you fall you land back on it. As you climb, the ledge follows you up to stay within 300 m below your highest point, so a long fall still lands among crystals. Shards still crack your glass, so a practice run ends if you shatter. To end it yourself, pause (`P` or `Esc`) and choose **End practice** to see your song, or **Title screen** to go straight back. Practice runs don't count toward your best height. All five strata are open from the start, so you can learn the shards and moths before you reach them in a real climb.
+Choose **Practice** on the title screen and pick a stratum to start in. There is no Hush: you start on a rock ledge at the bottom of that stratum, and if you fall you land back on it. As you climb, the ledge follows you up to stay within 300 m below your highest point, so a long fall still lands among crystals. Shattered crystals grow back after a few seconds, so the way up never closes, and if you land on the ledge with nothing in reach, a crystal wakes above you. Shards still crack your glass, so a practice run ends if you shatter. To end it yourself, pause (`P` or `Esc`) and choose **End practice** to see your song, or **Title screen** to go straight back. Practice runs don't count toward your best height. All five strata are open from the start, so you can learn the shards and moths before you reach them in a real climb.
 
 ## Strata
 

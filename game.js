@@ -26,6 +26,8 @@ const RECOACH_M = 150;      // ...and come back here for anyone who hasn't learn
 const HANDOFFS_LEARNED = 3; // handoffs past COACH_M that count as having learned it
 const FLOW_T = 2.2;         // handoffs this close together (seconds) build a flow
 const WARN_T = 1.0;         // a crystal warns this long before it shatters
+const REGROW_T = 6;         // in practice, a shattered crystal grows back after this long
+const REST_GROW_T = 1.0;    // resting on rock with nothing in reach wakes a crystal after this long
 const BREATH_COST = 11;     // per note, per second
 const BREATH_REGEN = 28;
 const CRYSTAL_WEAR = 0.19;  // charge lost per second while tethered
@@ -503,7 +505,7 @@ let rand, nL1, nL2, nR1, nR2;
 let P, crystals, shards, echoes, moths, particles, texts;
 let camY, silenceY, hushTimer, nextBandY, lastNote, maxM, echoCount, notesSung, chordsSung;
 let playTime, song, deathCause, shake, stratumIdx, bannerT, dieT, overT, cleanupT, prevSingCount;
-let hushStarted, exposure, coachTarget, coach, handoffs, flow, lastHandoffT, camAnchor, spine, echoLead, callouts, explained, slowT;
+let hushStarted, exposure, coachTarget, coach, handoffs, flow, lastHandoffT, restT, camAnchor, spine, echoLead, callouts, explained, slowT;
 let time = 0;
 const keyHeld = Array(10).fill(false);
 const padHeld = Array(10).fill(false);
@@ -539,7 +541,7 @@ function reset() {
   hushTimer = 0; nextBandY = floorY - 120; lastNote = Math.floor(rand() * NN);
   spine = { x: W / 2, y: floorY - 12, note: -1, nextY: floorY - 12 - 120 };
   maxM = startM; echoCount = 0; notesSung = 0; chordsSung = 0; prevSingCount = 0;
-  hushStarted = false; exposure = 0; coachTarget = null; coach = null; handoffs = 0; flow = 0; lastHandoffT = -99;
+  hushStarted = false; exposure = 0; coachTarget = null; coach = null; handoffs = 0; flow = 0; lastHandoffT = -99; restT = 0;
   echoLead = 0; callouts = []; explained = new Set(); slowT = 0;
   playTime = 0; song = []; shake = 0; stratumIdx = stratumAt(startM); bannerT = 0; dieT = 0; overT = 0; cleanupT = 0;
   for (let i = 0; i < NN; i++) { tethers[i] = null; inRange[i] = null; }
@@ -718,8 +720,20 @@ function pickCoach() {
   return best;
 }
 
+// A new crystal in easy reach above you, for when you're stuck on the rock.
+function growAbove() {
+  const y = floorY - 12 - 210;
+  const [L, R] = walls(y);
+  const note = Math.floor(Math.random() * NN);
+  const c = makeCrystal(clamp(P.x + (Math.random() - 0.5) * 200, L + 40, R - 40), y, note);
+  c.ring = 1;
+  crystals.push(c);
+  AudioE.chime(noteFreq(note) * 2, 0.08);
+  emit(c.x, c.y, 14, { c: NOTES[note].rgb, speed: 80, life: 0.7 });
+}
+
 function shatterCrystal(c, quiet) {
-  c.alive = false; c.charge = 0;
+  c.alive = false; c.charge = 0; c.dead = 0;
   for (let i = 0; i < NN; i++) if (tethers[i] === c) tethers[i] = null;
   if (quiet) return;
   AudioE.shatter(noteFreq(c.note));
@@ -893,6 +907,19 @@ function update(dt) {
   if (practice) AudioE.setHush(0);
   else if (updateHush(dt, S, ease)) return;
 
+  // Practice heals the cave: shattered crystals grow back, so the way up stays open.
+  if (practice) {
+    for (const c of crystals) {
+      if (c.alive || (c.dead += dt) < REGROW_T || Math.hypot(c.x - P.x, c.y - P.y) < 50) continue;
+      Object.assign(c, { alive: true, charge: 1, warned: false, ring: 1 });
+      emit(c.x, c.y, 10, { c: NOTES[c.note].rgb, speed: 60, life: 0.6 });
+    }
+  }
+  // Resting on rock with nothing above in reach, you can't drift to find one, so wake one over you.
+  const resting = P.y + P.r >= floorY - 2 && Math.abs(P.vy) < 40;
+  restT = resting && !inRange.some(c => c && c.y < P.y - 20) ? restT + dt : 0;
+  if (restT > REST_GROW_T) { restT = 0; growAbove(); }
+
   // world upkeep
   genUpTo(camY + vy0 - 500);
   cleanupT += dt;
@@ -905,7 +932,7 @@ function update(dt) {
       cut = mothCut = FLOOR_Y - 12 - maxM * PX_PER_M + PRACTICE_KEEP;
       floorY = Math.min(floorY, cut - 400);
     }
-    crystals = crystals.filter(c => c.alive && c.y < cut);
+    crystals = crystals.filter(c => (c.alive || practice) && c.y < cut);
     shards = shards.filter(s => s.y < cut);
     echoes = echoes.filter(e => e.alive && e.y < cut);
     moths = moths.filter(m => m.y < mothCut);
@@ -1320,6 +1347,7 @@ function coachAdvice() {
   }
   if (P.vy < -250 && P.breath < 80) return { text: "You're flying. Stay quiet to catch your breath.", hold: [], target: null };
   if (next) return { text: `Hold ${k(next.note)} to rise toward the ${NOTES[next.note].name.toLowerCase()} crystal.`, hold: [next.note], target: next };
+  if (P.y + P.r >= floorY - 2) return { text: 'Rest here a moment. A crystal will wake above you.', hold: [], target: null };
   return { text: 'Nothing above is in reach. Let yourself drift until a crystal lights up.', hold: [], target: null };
 }
 
@@ -2093,7 +2121,7 @@ function frame(now) {
 
 if (location.hash === '#debug') {
   window.__hollowsong = () => ({ state, P, crystals, inRange: inRange.slice(), silenceY, maxM, deathCause, playTime, held: held.slice(), layoutId,
-    coach: coach && { text: coach.text, hold: coach.hold.slice() }, echoLead, callouts: callouts.map(c => c.kind), handoffs, flow });
+    coach: coach && { text: coach.text, hold: coach.hold.slice() }, echoLead, callouts: callouts.map(c => c.kind), handoffs, flow, floorY });
   window.__hollowsongStep = () => frame(performance.now());
   // Generates a fresh cave up to `top` (world y) and returns its crystals, for layout analysis.
   window.__hollowsongWorld = top => { reset(); genUpTo(top); return crystals.map(c => ({ x: c.x, y: c.y, note: c.note, spine: !!c.spine })); };
