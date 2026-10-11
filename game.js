@@ -20,12 +20,15 @@ const GRAV = 540;
 const MAX_SPEED = 780;
 const HUSH_LEAD = 520;      // the Hush never lags further than this below you
 const EASE_M = 250;         // the climb starts gentle and reaches full difficulty here
-const COACH_M = 60;         // live hints for new players stop at this height
+const PRACTICE_KEEP = 6000; // practice keeps the cave this far (300 m) below your peak
+const COACH_M = 60;         // live hints for new players stop at this height...
+const RECOACH_M = 150;      // ...and come back here for anyone who hasn't learned the handoff
+const HANDOFFS_LEARNED = 3; // handoffs past COACH_M that count as having learned it
 const BREATH_COST = 11;     // per note, per second
 const BREATH_REGEN = 28;
 const CRYSTAL_WEAR = 0.19;  // charge lost per second while tethered
 const TETHER_AIM = 60;      // early on, a note pulls toward this far above its crystal, so you rise past it instead of hanging below
-const TETHER_AIM_FULL = 0;  // ...shrinking to this by EASE_M
+const TETHER_AIM_FULL = 10; // ...shrinking to this by EASE_M, so single notes get slower rather than stop
 const ECHO_PUSH = 90;       // how far an echo pushes the Hush back
 const ECHO_FADE = 12;       // px per second: an echo's extra room fades over ~7.5 s
 const DISPLAY = '"Italiana", "Cormorant Garamond", Georgia, serif';
@@ -82,11 +85,12 @@ const customId = () => NN > 5 ? 'custom2' : 'custom';
 const defaultLayout = () => NN > 5 ? 'home2' : 'left';
 // Number keys always work, whatever the layout (6–9 only with two hands).
 const ALWAYS_KEYS = {
-  Digit1: 0, Digit2: 1, Digit3: 2, Digit4: 3, Digit5: 4, Digit6: 5, Digit7: 6, Digit8: 7, Digit9: 8, Digit0: 9,
-  Numpad1: 0, Numpad2: 1, Numpad3: 2, Numpad4: 3, Numpad5: 4, Numpad6: 5, Numpad7: 6, Numpad8: 7, Numpad9: 8, Numpad0: 9,
+  Digit1: 0, Digit2: 1, Digit3: 2, Digit4: 3, Digit5: 4, Digit6: 5, Digit7: 6, Digit8: 7, Digit9: 8,
+  Numpad1: 0, Numpad2: 1, Numpad3: 2, Numpad4: 3, Numpad5: 4, Numpad6: 5, Numpad7: 6, Numpad8: 7, Numpad9: 8,
 };
-// Keys that run the game itself and can't be bound to notes.
-const RESERVED = new Set(['Escape', 'Enter', 'NumpadEnter', 'Tab', 'KeyP', 'KeyM', 'KeyR', ...Object.keys(ALWAYS_KEYS)]);
+// Keys that run the game itself, plus the number keys in use, can't be bound to notes.
+const RESERVED = new Set(['Escape', 'Enter', 'NumpadEnter', 'Tab', 'KeyP', 'KeyM', 'KeyR']);
+const reserved = (code, n) => RESERVED.has(code) || (code in ALWAYS_KEYS && ALWAYS_KEYS[code] < n);
 const CODE_LABELS = {
   Space: ['SPACE', 'Space'], Semicolon: [';', ';'], Quote: ["'", "'"], Comma: [',', ','], Period: ['.', '.'],
   Slash: ['/', '/'], Backslash: ['\\', '\\'], BracketLeft: ['[', '['], BracketRight: [']', ']'],
@@ -438,7 +442,7 @@ let rand, nL1, nL2, nR1, nR2;
 let P, crystals, shards, echoes, moths, particles, texts;
 let camY, silenceY, hushTimer, nextBandY, lastNote, maxM, echoCount, notesSung, chordsSung;
 let playTime, song, deathCause, shake, stratumIdx, bannerT, dieT, overT, cleanupT, prevSingCount;
-let hushStarted, exposure, coachTarget, coach, camAnchor, spine, echoLead, callouts, explained, slowT;
+let hushStarted, exposure, coachTarget, coach, handoffs, camAnchor, spine, echoLead, callouts, explained, slowT;
 let time = 0;
 const keyHeld = Array(10).fill(false);
 const padHeld = Array(10).fill(false);
@@ -474,7 +478,7 @@ function reset() {
   hushTimer = 0; nextBandY = floorY - 120; lastNote = Math.floor(rand() * NN);
   spine = { x: W / 2, y: floorY - 12, note: -1, nextY: floorY - 12 - 120 };
   maxM = startM; echoCount = 0; notesSung = 0; chordsSung = 0; prevSingCount = 0;
-  hushStarted = false; exposure = 0; coachTarget = null; coach = null;
+  hushStarted = false; exposure = 0; coachTarget = null; coach = null; handoffs = 0;
   echoLead = 0; callouts = []; explained = new Set(); slowT = 0;
   playTime = 0; song = []; shake = 0; stratumIdx = stratumAt(startM); bannerT = 0; dieT = 0; overT = 0; cleanupT = 0;
   for (let i = 0; i < NN; i++) { tethers[i] = null; inRange[i] = null; }
@@ -510,7 +514,7 @@ function genBand(yb) {
   const S = STRATA[stratumAt(m)];
   const bandH = S.band;
   const early = yb > -320;
-  const n = (m < 150 || rand() < S.pair ? 2 : 1) + (NN > 5 ? 1 : 0); // ten notes need more crystals to choose from
+  const n = (m < 150 || rand() < S.pair ? 2 : 1) + (NN > 5 ? 1 : 0); // nine notes need more crystals to choose from
   // The spine: a chain of crystals, each within reach of the one below it (even
   // hanging beneath it) and never sharing its note, so there is always a way up.
   let placed = 0;
@@ -699,6 +703,8 @@ function update(dt) {
     const c = sing[i] ? inRange[i] : null;
     if (c !== tethers[i]) {
       if (c) {
+        // a handoff past the beginners' coaching: catching a higher crystal while still holding a lower one
+        if (maxM >= COACH_M && tethers.some((t, j) => t && j !== i && sing[j] && t.y > c.y + 20)) handoffs++;
         AudioE.chime(noteFreq(i) * 2, 0.1);
         c.ring = 1;
         emit(c.x, c.y, 8, { c: NOTES[i].rgb, speed: 90, life: 0.5 });
@@ -706,7 +712,7 @@ function update(dt) {
       tethers[i] = c;
     }
   }
-  coachTarget = maxM < COACH_M ? pickCoach() : null;
+  coachTarget = coachOn() ? pickCoach() : null;
   coach = coachAdvice();
 
   // forces
@@ -816,11 +822,17 @@ function update(dt) {
   cleanupT += dt;
   if (cleanupT > 0.5) {
     cleanupT = 0;
-    const cut = silenceY + 400;
+    // In practice there is no Hush, so clear what's far below your peak instead,
+    // and raise the ledge with it so a long fall still lands among crystals.
+    let cut = silenceY + 400, mothCut = silenceY + 40;
+    if (practice) {
+      cut = mothCut = FLOOR_Y - 12 - maxM * PX_PER_M + PRACTICE_KEEP;
+      floorY = Math.min(floorY, cut - 400);
+    }
     crystals = crystals.filter(c => c.alive && c.y < cut);
     shards = shards.filter(s => s.y < cut);
     echoes = echoes.filter(e => e.alive && e.y < cut);
-    moths = moths.filter(m => m.y < silenceY + 40);
+    moths = moths.filter(m => m.y < mothCut);
   }
   for (const c of crystals) c.ring = Math.max(0, c.ring - dt * 2);
   updateCallouts(dt);
@@ -1199,8 +1211,12 @@ function drawCoach() {
 // What a new player should do right now: the words to show, the notes to hold,
 // and the crystal to point at. It teaches the handoff: catch the next crystal
 // before letting go of the one you're on.
+function coachOn() {
+  const start = practice ? STRATA[practiceStratum].at : 0;
+  return maxM - start < COACH_M || (maxM >= RECOACH_M && handoffs < HANDOFFS_LEARNED);
+}
 function coachAdvice() {
-  if (maxM >= COACH_M || P.winded) return null;
+  if (!coachOn() || P.winded) return null;
   const k = i => keyLong(noteKey(i));
   const on = [];
   for (let i = 0; i < NN; i++) if (tethers[i]) on.push(i);
@@ -1686,15 +1702,18 @@ function showOver() {
     'Falling is fine. You have time to catch another crystal before the Hush reaches you.',
     'Watch the ring around your glass. When it runs low, go quiet for a moment to refill it.',
   ];
-  $('overTip').textContent = maxM < 150 ? `Tip: ${tips[Math.floor(Math.random() * tips.length)]}` : '';
-  $('overTip').hidden = maxM >= 150;
+  const wall = deathCause === 'hush' && maxM >= 150 && maxM <= 350;
+  const tip = wall ? 'Past 250 m a single note only pulls you up to just below its crystal. Hold the next note before you let go of the one you are on: that handoff is how you keep climbing.'
+    : maxM < 150 ? tips[Math.floor(Math.random() * tips.length)] : '';
+  $('overTip').textContent = tip ? `Tip: ${tip}` : '';
+  $('overTip').hidden = !tip;
   $('statEchoes').textContent = echoCount;
   $('statNotes').textContent = notesSung;
   $('statChords').textContent = chordsSung;
   $('statBest').textContent = Math.floor(bestM);
   showBest();
   rollData = buildSong();
-  rollCv.style.height = rollData.rows > 5 ? '168px' : ''; // ten rows need more room
+  rollCv.style.height = rollData.rows > 5 ? '168px' : ''; // nine rows need more room
   overEl.hidden = false;
   drawRoll(null);
   $('btnAgain').focus({ preventScroll: true });
@@ -1802,7 +1821,7 @@ function bindKey(code) {
     renderPicker();
     return;
   }
-  if (RESERVED.has(code)) { bindError = `${keyLong(code)} runs the game, so it can't be a note. Try another key.`; renderPicker(); return; }
+  if (reserved(code, NN)) { bindError = `${keyLong(code)} runs the game, so it can't be a note. Try another key.`; renderPicker(); return; }
   if (bindDraft.includes(code)) { bindError = `${keyLong(code)} is already one of your notes. Try another key.`; renderPicker(); return; }
   bindError = '';
   bindDraft.push(code);
@@ -1860,7 +1879,7 @@ renderTiles();
 for (const [id, n] of [['custom', 5], ['custom2', 9]]) {
   try {
     const saved = JSON.parse(localStorage.getItem(`hollowsong.${id}`) || 'null');
-    if (Array.isArray(saved) && saved.length === n && saved.every(c => typeof c === 'string' && !RESERVED.has(c)) && new Set(saved).size === n) LAYOUTS[id].keys = saved;
+    if (Array.isArray(saved) && saved.length === n && saved.every(c => typeof c === 'string' && !reserved(c, n)) && new Set(saved).size === n) LAYOUTS[id].keys = saved;
   } catch (e) { /* storage unavailable */ }
 }
 function loadLayout() {
@@ -1870,7 +1889,7 @@ function loadLayout() {
 }
 loadLayout();
 
-// One hand or two. Switching rebuilds the cave (two hands have ten kinds of crystal).
+// One hand or two. Switching rebuilds the cave (two hands have nine kinds of crystal).
 function setHands(two) {
   if ((NN > 5) === two) return;
   useHands(two);
