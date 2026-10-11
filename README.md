@@ -37,9 +37,9 @@ The note tiles along the bottom of the screen show which notes are in reach. Onc
 ## Rules
 
 - **Breath.** Each held note spends breath. When you're quiet your breath refills, but you fall. If you run out, you can't sing until you've recovered about a third of your breath.
-- **Wear.** A crystal cracks while you're tethered to it, and shatters after about five seconds.
+- **Wear.** A crystal cracks while you're tethered to it, and shatters after about five seconds. Your note swells and shimmers as it wears, and in its last second the crystal flickers with a brittle sound.
 - **The Hush.** It rises from below and silences any crystal it reaches. It waits until you've climbed a few metres (or 20 seconds pass) before it starts rising. If it swallows you, you have a moment to sing your way back out before the run ends. It never falls more than 26 m behind you, or 50 m near the start.
-- **Handoff.** Start singing the next crystal above before you let go of the one you're on. Then go quiet while your momentum carries you up, so your breath refills.
+- **Handoff.** Start singing the next crystal above before you let go of the one you're on. Then go quiet while your momentum carries you up, so your breath refills. A clean handoff rings both notes together and opens a ring of light. Quick handoffs in a row build a flow that rings brighter.
 - **Gentle start.** The first 250 m ease you in: the Hush is slower, falls are slower, swings settle faster, crystals last about twice as long and singing costs less breath. A note also lifts you up past its crystal, so you can let go and coast. All of this tapers off to full difficulty by 250 m. From there a single note only lifts you a little way past its crystal, so climbing one note at a time gets slow and the handoff becomes the way up. For the first 60 m a coach marks the crystal to aim for and tells you which keys to hold and when to let go, teaching the handoff. If you reach 150 m without doing three handoffs since then, the coach comes back as a refresher until you have.
 - **First sightings.** The first time a shard, moth or echo comes into view, the game points at it and says what it does. Shards and moths also slow time for a moment. This happens in your first three runs that meet each one. Each stratum's banner names its new danger.
 - **Shards** (red, jagged) crack your glass. Three cracks and you shatter.
@@ -70,7 +70,7 @@ Choose **Practice** on the title screen and pick a stratum to start in. There is
 | 900 m | Throat of the Mountain | C | narrower cave, faster Hush |
 | 1400 m | The Last Aperture | E | stars appear |
 
-Each stratum changes the cave's colours, the key of every note you sing, and the drone underneath. Your best height is saved in the browser's local storage.
+Each stratum changes the cave's colours, the key of every note you sing, and the drone underneath. The echo of the cave changes too, from a close chamber at the bottom to open air at the top, with the narrow Throat closing in again. Your best height is saved in the browser's local storage.
 
 ## Play stats
 

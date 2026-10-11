@@ -24,6 +24,8 @@ const PRACTICE_KEEP = 6000; // practice keeps the cave this far (300 m) below yo
 const COACH_M = 60;         // live hints for new players stop at this height...
 const RECOACH_M = 150;      // ...and come back here for anyone who hasn't learned the handoff
 const HANDOFFS_LEARNED = 3; // handoffs past COACH_M that count as having learned it
+const FLOW_T = 2.2;         // handoffs this close together (seconds) build a flow
+const WARN_T = 1.0;         // a crystal warns this long before it shatters
 const BREATH_COST = 11;     // per note, per second
 const BREATH_REGEN = 28;
 const CRYSTAL_WEAR = 0.19;  // charge lost per second while tethered
@@ -151,6 +153,16 @@ const STRATA = [
   { at: 900,  name: 'Throat of the Mountain', root: 130.81, sky: ['#2b0c17', '#0b0306'], rock: '#2d111a', edge: '#e05a70', hush: 85,  band: 172, pair: 0.48, shard: 0.48, moth: 0.13, warn: 'The cave narrows, and the Hush rises faster.' },
   { at: 1400, name: 'The Last Aperture',      root: 164.81, sky: ['#1d3050', '#0a1122'], rock: '#1d283b', edge: '#b0ceff', hush: 100, band: 182, pair: 0.45, shard: 0.52, moth: 0.20 },
 ];
+// How each stratum sounds: space is how big the echo is (0 a close chamber, 1 open
+// air), tone is how bright the drone is (Hz), beat is how uneasy it is.
+const SOUNDS = [
+  { space: 0.0,  tone: 380, beat: 0.002 },
+  { space: 0.35, tone: 560, beat: 0.002 },
+  { space: 0.5,  tone: 300, beat: 0.004 },
+  { space: 0.2,  tone: 680, beat: 0.007 },
+  { space: 1.0,  tone: 950, beat: 0.001 },
+];
+STRATA.forEach((s, i) => Object.assign(s, SOUNDS[i]));
 STRATA.forEach(s => { s.sky0 = hexRgb(s.sky[0]); s.sky1 = hexRgb(s.sky[1]); s.rockRgb = hexRgb(s.rock); s.edgeRgb = hexRgb(s.edge); });
 
 function stratumAt(m) {
@@ -191,7 +203,7 @@ function hash(i) {
 
 // ------------------------------------------------------------------- audio
 const AudioE = (() => {
-  let ctx = null, bus, hushF, master, droneG, noiseBuf, muted = false;
+  let ctx = null, bus, hushF, master, droneG, droneLP, wetNear, wetFar, noiseBuf, muted = false;
   const droneOscs = [];
   const api = {};
   api.now = () => ctx ? ctx.currentTime : 0;
@@ -207,9 +219,14 @@ const AudioE = (() => {
     comp.attack.value = 0.01; comp.release.value = 0.25;
     hushF = ctx.createBiquadFilter(); hushF.type = 'lowpass'; hushF.frequency.value = 18000; hushF.Q.value = 0.8;
     bus = ctx.createGain();
-    const verb = ctx.createConvolver(); verb.buffer = impulse(3.4, 2.4);
-    const wet = ctx.createGain(); wet.gain.value = 0.5;
-    bus.connect(hushF); bus.connect(verb); verb.connect(wet); wet.connect(hushF);
+    // two rooms, crossfaded by setDrone: a close chamber low down, open air near the top
+    const near = ctx.createConvolver(); near.buffer = impulse(1.6, 3);
+    const far = ctx.createConvolver(); far.buffer = impulse(5.5, 2);
+    wetNear = ctx.createGain(); wetNear.gain.value = 0.5;
+    wetFar = ctx.createGain(); wetFar.gain.value = 0;
+    bus.connect(hushF);
+    bus.connect(near); near.connect(wetNear); wetNear.connect(hushF);
+    bus.connect(far); far.connect(wetFar); wetFar.connect(hushF);
     hushF.connect(comp); comp.connect(master); master.connect(ctx.destination);
 
     noiseBuf = ctx.createBuffer(1, ctx.sampleRate, ctx.sampleRate);
@@ -218,8 +235,8 @@ const AudioE = (() => {
 
     // The cave's own drone: root an octave down, a fifth, and a slow beat.
     droneG = ctx.createGain(); droneG.gain.value = 0;
-    const dlp = ctx.createBiquadFilter(); dlp.type = 'lowpass'; dlp.frequency.value = 420;
-    droneG.connect(dlp); dlp.connect(bus);
+    droneLP = ctx.createBiquadFilter(); droneLP.type = 'lowpass'; droneLP.frequency.value = 420;
+    droneG.connect(droneLP); droneLP.connect(bus);
     [[0.5, 'sine', 0.55], [0.502, 'sine', 0.3], [0.75, 'triangle', 0.16], [1.0, 'sine', 0.1]].forEach(([m, type, g]) => {
       const o = ctx.createOscillator(); o.type = type; o.frequency.value = 110 * m;
       const gg = ctx.createGain(); gg.gain.value = g;
@@ -239,9 +256,10 @@ const AudioE = (() => {
   }
   function osc(type, f, at) { const o = ctx.createOscillator(); o.type = type; o.frequency.value = f; o.start(at); return o; }
 
-  // A sustained sung note. Returns a handle with stop(t) and setFreq(f).
+  // A sustained sung note. Returns a handle with stop(t), setFreq(f) and
+  // setSwell(w): from 0 to 1, a shimmer that builds as the crystal wears.
   api.voice = (freq, at, vol = 0.12) => {
-    if (!ctx) return { stop() {}, setFreq() {} };
+    if (!ctx) return { stop() {}, setFreq() {}, setSwell() {} };
     at = Math.max(at ?? ctx.currentTime, ctx.currentTime);
     const out = ctx.createGain();
     out.gain.setValueAtTime(0, at);
@@ -257,14 +275,29 @@ const AudioE = (() => {
     lfo.connect(l2); l2.connect(o2.frequency);
     o1.connect(lp); o2.connect(g2); g2.connect(lp); o3.connect(g3); g3.connect(lp);
     lp.connect(out); out.connect(bus);
-    const oscs = [o1, o2, o3, lfo];
-    let stopAt = Infinity;
+    // the swell: a bright twelfth with a fast flutter, silent until setSwell
+    const o4 = osc('sine', freq * 3, at), flut = osc('sine', 9 + Math.random() * 2, at);
+    const g4 = ctx.createGain(); g4.gain.value = 0;
+    const fd = ctx.createGain(); fd.gain.value = freq * 0.02;
+    flut.connect(fd); fd.connect(o4.frequency);
+    o4.connect(g4); g4.connect(out);
+    const oscs = [o1, o2, o3, lfo, o4, flut];
+    let stopAt = Infinity, swell = 0, f0 = freq;
     return {
       setFreq(f) {
         const t = ctx.currentTime;
+        f0 = f;
         o1.frequency.setTargetAtTime(f, t, 0.08);
         o2.frequency.setTargetAtTime(f * 2, t, 0.08);
         o3.frequency.setTargetAtTime(f * 0.5, t, 0.08);
+        o4.frequency.setTargetAtTime(f * 3, t, 0.08);
+      },
+      setSwell(w) {
+        if (Math.abs(w - swell) < 0.02) return;
+        swell = w;
+        const t = ctx.currentTime;
+        g4.gain.setTargetAtTime(0.5 * w * w, t, 0.15);
+        lp.frequency.setTargetAtTime(Math.min(6000, f0 * (9 + 10 * w)), t, 0.15);
       },
       stop(t) {
         t = Math.max(t ?? ctx.currentTime, ctx.currentTime);
@@ -332,6 +365,29 @@ const AudioE = (() => {
     const t = ctx.currentTime;
     freqs.forEach((f, k) => api.chime(f, 0.08, t + k * 0.075));
   };
+  // A clean handoff: both crystals ring together as an interval with a soft bell
+  // under them. In a flow of quick handoffs, sparkles climb above it.
+  api.handoff = (fLow, fHigh, flow) => {
+    if (!ctx) return;
+    const t = ctx.currentTime;
+    api.chime(fLow * 2, 0.07, t);
+    api.chime(fHigh * 2, 0.09, t + 0.03);
+    [fLow * 2, fHigh * 2].forEach(f => {
+      const o = osc('sine', f, t), g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(0.035, t + 0.04);
+      g.gain.exponentialRampToValueAtTime(0.0001, t + 1.4);
+      o.connect(g); g.connect(bus); o.stop(t + 1.5);
+    });
+    for (let k = 0; k < flow; k++) api.chime(fHigh * 4 * Math.pow(2, [0, 4, 7][k] / 12), 0.05, t + 0.09 + k * 0.07);
+  };
+  // A crystal about to shatter: a brittle flutter.
+  api.warn = f => {
+    if (!ctx) return;
+    const t = ctx.currentTime;
+    for (let k = 0; k < 3; k++) api.chime(f * 4 * (1 + (k - 1) * 0.012), 0.05, t + k * 0.08);
+    api.noise(0.25, 'highpass', 5000, 0.05, t);
+  };
   api.tink = () => api.chime(2400 + Math.random() * 900, 0.022);
   api.gasp = () => api.noise(0.5, 'bandpass', 800, 0.14, undefined, 2);
   api.hushDeath = () => { api.noise(2.2, 'lowpass', 300, 0.5); api.thump(90, 30, 1.5, 0.4); };
@@ -340,10 +396,15 @@ const AudioE = (() => {
     const f = 18000 * Math.pow(240 / 18000, clamp(p, 0, 1));
     hushF.frequency.setTargetAtTime(f, ctx.currentTime, 0.15);
   };
-  api.setDrone = (root, level) => {
+  // Tune the cave to a stratum: the drone's key, brightness and beat, and the size of the room.
+  api.setDrone = (S, level) => {
     if (!ctx) return;
-    droneOscs.forEach(({ o, m }) => o.frequency.setTargetAtTime(root * m, ctx.currentTime, 1.2));
-    droneG.gain.setTargetAtTime(level, ctx.currentTime, 1.0);
+    const t = ctx.currentTime;
+    droneOscs.forEach(({ o, m }, k) => o.frequency.setTargetAtTime(S.root * (k === 1 ? 0.5 + S.beat : m), t, 1.2));
+    droneG.gain.setTargetAtTime(level, t, 1.0);
+    droneLP.frequency.setTargetAtTime(S.tone, t, 1.5);
+    wetNear.gain.setTargetAtTime(lerp(0.55, 0.15, S.space), t, 1.5);
+    wetFar.gain.setTargetAtTime(lerp(0.05, 0.6, S.space), t, 1.5);
   };
   api.toggleMute = () => {
     muted = !muted;
@@ -442,7 +503,7 @@ let rand, nL1, nL2, nR1, nR2;
 let P, crystals, shards, echoes, moths, particles, texts;
 let camY, silenceY, hushTimer, nextBandY, lastNote, maxM, echoCount, notesSung, chordsSung;
 let playTime, song, deathCause, shake, stratumIdx, bannerT, dieT, overT, cleanupT, prevSingCount;
-let hushStarted, exposure, coachTarget, coach, handoffs, camAnchor, spine, echoLead, callouts, explained, slowT;
+let hushStarted, exposure, coachTarget, coach, handoffs, flow, lastHandoffT, camAnchor, spine, echoLead, callouts, explained, slowT;
 let time = 0;
 const keyHeld = Array(10).fill(false);
 const padHeld = Array(10).fill(false);
@@ -478,7 +539,7 @@ function reset() {
   hushTimer = 0; nextBandY = floorY - 120; lastNote = Math.floor(rand() * NN);
   spine = { x: W / 2, y: floorY - 12, note: -1, nextY: floorY - 12 - 120 };
   maxM = startM; echoCount = 0; notesSung = 0; chordsSung = 0; prevSingCount = 0;
-  hushStarted = false; exposure = 0; coachTarget = null; coach = null; handoffs = 0;
+  hushStarted = false; exposure = 0; coachTarget = null; coach = null; handoffs = 0; flow = 0; lastHandoffT = -99;
   echoLead = 0; callouts = []; explained = new Set(); slowT = 0;
   playTime = 0; song = []; shake = 0; stratumIdx = stratumAt(startM); bannerT = 0; dieT = 0; overT = 0; cleanupT = 0;
   for (let i = 0; i < NN; i++) { tethers[i] = null; inRange[i] = null; }
@@ -493,7 +554,7 @@ function makeCrystal(x, y, note) {
     const sx = (rand() - 0.5) * 0.5, sy = (rand() - 0.5) * 0.8;
     cracks.push([sx, sy, sx + Math.cos(a) * l, sy + Math.sin(a) * l]);
   }
-  return { x, y, note, size: (15 + rand() * 7) * (NOTES[note].high ? 0.85 : 1), rot: (rand() - 0.5) * 0.5, charge: 1, alive: true, ring: 0, phase: rand() * 6.28, cracks };
+  return { x, y, note, size: (15 + rand() * 7) * (NOTES[note].high ? 0.85 : 1), rot: (rand() - 0.5) * 0.5, charge: 1, alive: true, ring: 0, bloom: 0, bloomK: 0, warned: false, phase: rand() * 6.28, cracks };
 }
 function tooClose(x, y, d) {
   for (let k = crystals.length - 1, n = 0; k >= 0 && n < 14; k--, n++) {
@@ -703,11 +764,22 @@ function update(dt) {
     const c = sing[i] ? inRange[i] : null;
     if (c !== tethers[i]) {
       if (c) {
-        // a handoff past the beginners' coaching: catching a higher crystal while still holding a lower one
-        if (maxM >= COACH_M && tethers.some((t, j) => t && j !== i && sing[j] && t.y > c.y + 20)) handoffs++;
-        AudioE.chime(noteFreq(i) * 2, 0.1);
+        // a handoff: catching a higher crystal while still holding a lower one
+        const j = tethers.findIndex((t, k) => t && k !== i && sing[k] && t.y > c.y + 20);
         c.ring = 1;
-        emit(c.x, c.y, 8, { c: NOTES[i].rgb, speed: 90, life: 0.5 });
+        if (j >= 0) {
+          if (maxM >= COACH_M) handoffs++; // past the beginners' coaching, it counts as learned
+          // quick handoffs in a row build a flow, and each one rings brighter
+          flow = playTime - lastHandoffT < FLOW_T ? Math.min(3, flow + 1) : 0;
+          lastHandoffT = playTime;
+          AudioE.handoff(noteFreq(j), noteFreq(i), flow);
+          c.bloom = 1; c.bloomK = flow;
+          const glow = mixRgb(NOTES[i].rgb, [255, 255, 255], 0.35);
+          emit(c.x, c.y, 14 + 6 * flow, { c: glow, speed: 120 + 30 * flow, life: 0.7 });
+        } else {
+          AudioE.chime(noteFreq(i) * 2, 0.1);
+          emit(c.x, c.y, 8, { c: NOTES[i].rgb, speed: 90, life: 0.5 });
+        }
       }
       tethers[i] = c;
     }
@@ -725,9 +797,13 @@ function update(dt) {
     const dx = c.x - P.x, dy = c.y - aim - P.y, d = Math.hypot(dx, dy) || 1;
     const F = Math.min(1900, 11 * Math.max(0, d - 30)) * pull;
     ax += dx / d * F; ay += dy / d * F; nT++;
-    c.charge -= CRYSTAL_WEAR * lerp(1, 0.45, ease) * dt;
+    const wear = CRYSTAL_WEAR * lerp(1, 0.45, ease);
+    c.charge -= wear * dt;
+    if (!c.warned && c.charge < wear * WARN_T) { c.warned = true; AudioE.warn(noteFreq(i)); }
     if (c.charge <= 0) shatterCrystal(c);
   }
+  // a held note swells as its crystal wears
+  for (let i = 0; i < NN; i++) if (voices[i]) voices[i].setSwell(tethers[i] ? 1 - tethers[i].charge : 0);
   if (nT >= 2 && Math.random() < dt * 20) emit(P.x, P.y, 1, { c: P.glow, speed: 40, life: 0.8, size: 2 });
   P.vx += ax * dt; P.vy += ay * dt;
   // early on, swings settle faster and falls are slower, so there's time to react
@@ -751,7 +827,7 @@ function update(dt) {
   if (st !== stratumIdx) {
     stratumIdx = st;
     bannerT = 4.5;
-    AudioE.setDrone(STRATA[st].root, 0.12);
+    AudioE.setDrone(STRATA[st], 0.12);
     for (let i = 0; i < NN; i++) if (voices[i]) voices[i].setFreq(noteFreq(i));
     AudioE.sparkle([0, 2, 4].map(k => noteFreq(k) * 2));
   }
@@ -834,7 +910,7 @@ function update(dt) {
     echoes = echoes.filter(e => e.alive && e.y < cut);
     moths = moths.filter(m => m.y < mothCut);
   }
-  for (const c of crystals) c.ring = Math.max(0, c.ring - dt * 2);
+  for (const c of crystals) { c.ring = Math.max(0, c.ring - dt * 2); c.bloom = Math.max(0, c.bloom - dt * 1.4); }
   updateCallouts(dt);
   updateCamera(dt);
 }
@@ -902,7 +978,7 @@ function die(cause) {
     emit(P.x, P.y, 40, { c: [220, 235, 255], speed: 280, life: 1.4, size: 4, g: 420, type: 'glass' });
     shake = 16;
   }
-  AudioE.setDrone(STRATA[stratumIdx].root, 0.04);
+  AudioE.setDrone(STRATA[stratumIdx], 0.04);
   saveBest();
 }
 function saveBest() {
@@ -1047,6 +1123,9 @@ function drawCrystal(c) {
   const near = state === 'play' && d < RANGE;
   const tethered = tethers[c.note] === c;
   const pulse = tethered ? 0.25 + 0.25 * Math.sin(time * 18) : 0;
+  // about to shatter: it flickers and trembles
+  const failing = tethered && c.warned;
+  const flick = failing ? 0.5 + 0.5 * Math.sin(time * 40) : 0;
 
   ctx.globalCompositeOperation = 'lighter';
   ctx.globalAlpha = clamp(0.22 + 0.4 * b + c.ring * 0.6 + pulse, 0, 1);
@@ -1055,15 +1134,24 @@ function drawCrystal(c) {
   ctx.globalAlpha = 1;
   ctx.globalCompositeOperation = 'source-over';
 
+  if (c.bloom > 0) {
+    // a clean handoff: rings of light open out from the crystal, wider in a flow
+    const k = 1 - c.bloom, r = c.size * 2.2 + k * (46 + 18 * c.bloomK);
+    ctx.strokeStyle = rgba(mixRgb(n.rgb, [255, 255, 255], 0.4), c.bloom * 0.8);
+    ctx.lineWidth = 1.5 + c.bloomK;
+    ctx.beginPath(); ctx.arc(c.x, c.y, r, 0, Math.PI * 2); ctx.stroke();
+    if (c.bloomK > 0) { ctx.lineWidth = 1; ctx.beginPath(); ctx.arc(c.x, c.y, r * 0.65, 0, Math.PI * 2); ctx.stroke(); }
+  }
+
   ctx.save();
-  ctx.translate(c.x, c.y);
+  ctx.translate(c.x + (failing ? (Math.random() - 0.5) * 2.5 : 0), c.y);
   ctx.rotate(c.rot + Math.sin(time * 0.8 + c.phase) * 0.04);
   ctx.scale(c.size, c.size);
   shapePath(ctx, n.shape);
-  ctx.fillStyle = rgba(mixRgb(n.rgb, [255, 255, 255], tethered ? 0.25 : 0), 0.3 + 0.6 * b);
+  ctx.fillStyle = rgba(mixRgb(n.rgb, [255, 255, 255], tethered ? 0.25 + 0.4 * flick : 0), 0.3 + 0.6 * b);
   ctx.fill();
-  ctx.lineWidth = 1.5 / c.size;
-  ctx.strokeStyle = `rgba(255,255,255,${0.25 + 0.45 * b})`;
+  ctx.lineWidth = (1.5 + 1.5 * flick) / c.size;
+  ctx.strokeStyle = `rgba(255,255,255,${0.25 + 0.45 * b + 0.3 * flick})`;
   ctx.stroke();
   const shown = Math.ceil((1 - c.charge) * 5.5);
   if (shown > 0) {
@@ -1638,7 +1726,7 @@ function begin() {
   track(practice ? `start/practice/s${practiceStratum + 1}` : runNo === 1 ? 'start/first' : 'start/again');
   hushTimer = 0;
   bannerT = 4.5;
-  AudioE.setDrone(STRATA[stratumIdx].root, 0.12);
+  AudioE.setDrone(STRATA[stratumIdx], 0.12);
   AudioE.setHush(0);
 }
 function restart() {
@@ -1675,7 +1763,7 @@ function toTitle() {
     pauseEl.hidden = true;
     reportRun('quit');
     saveBest();
-    AudioE.setDrone(STRATA[stratumIdx].root, 0.04);
+    AudioE.setDrone(STRATA[stratumIdx], 0.04);
     AudioE.setHush(0);
   } else if (state === 'over') {
     stopSong();
@@ -2005,7 +2093,7 @@ function frame(now) {
 
 if (location.hash === '#debug') {
   window.__hollowsong = () => ({ state, P, crystals, inRange: inRange.slice(), silenceY, maxM, deathCause, playTime, held: held.slice(), layoutId,
-    coach: coach && { text: coach.text, hold: coach.hold.slice() }, echoLead, callouts: callouts.map(c => c.kind) });
+    coach: coach && { text: coach.text, hold: coach.hold.slice() }, echoLead, callouts: callouts.map(c => c.kind), handoffs, flow });
   window.__hollowsongStep = () => frame(performance.now());
   // Generates a fresh cave up to `top` (world y) and returns its crystals, for layout analysis.
   window.__hollowsongWorld = top => { reset(); genUpTo(top); return crystals.map(c => ({ x: c.x, y: c.y, note: c.note, spine: !!c.spine })); };

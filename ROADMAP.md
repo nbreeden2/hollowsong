@@ -24,15 +24,15 @@ How to check changes: the bot harness from the Round 2 report (`#debug` hooks, f
 
 ## Phase 1: Musical feel (small, low risk)
 
-- [ ] **1.1 Clean-handoff reward**
+- [x] **1.1 Clean-handoff reward**
   - When a handoff happens (the moment that already counts `handoffs`), play a short harmonic chime (the two notes as an interval) and a bloom of light from the new crystal.
   - Make it subtly stronger for a fast handoff (caught soon after the last one) to reward flow (R5).
   - Check: easy to notice in play without clutter; no new sound on single-note grabs.
-- [ ] **1.2 Sound that changes with height**
+- [x] **1.2 Sound that changes with height**
   - A quiet background drone per stratum, built on each stratum's existing `root` pitch, crossfading at stratum boundaries.
   - Reverb that grows with height: a small chamber in the Root Choir, wide and open at the Last Aperture.
   - Respect the mute key and existing volume; nothing that tires the ear over a 5-minute run.
-- [ ] **1.3 Resonance on a held note**
+- [x] **1.3 Resonance on a held note**
   - The longer a crystal is held, the more its tone swells and shimmers. This doubles as the wear warning.
   - In the last second before a crystal shatters, add a clear sound and visual cue (R5 / Round 1: "short warning just before a crystal shatters").
   - Check: a player can tell a crystal is about to break without looking at it.
